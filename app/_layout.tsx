@@ -1,57 +1,68 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { useFonts } from 'expo-font';
-import { Stack } from 'expo-router';
+import { Slot, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import 'react-native-reanimated';
 
 import { useColorScheme } from '@/components/useColorScheme';
+import { AuthProvider, useAuth } from '@/providers/AuthProvider';
+import { PowerSyncProvider } from '@/providers/PowerSyncProvider';
+import { NotificationProvider } from '@/providers/NotificationProvider';
 
-export {
-  // Catch any errors thrown by the Layout component.
-  ErrorBoundary,
-} from 'expo-router';
+export { ErrorBoundary } from 'expo-router';
 
-export const unstable_settings = {
-  // Ensure that reloading on `/modal` keeps a back button present.
-  initialRouteName: '(tabs)',
-};
-
-// Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
+
+function AuthGate() {
+  const { session, loading, profile } = useAuth();
+  const segments = useSegments();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (loading) return;
+
+    const firstSegment = segments[0];
+    const inAuthGroup = firstSegment === '(auth)';
+
+    if (!session) {
+      if (!inAuthGroup) router.replace('/(auth)/login');
+    } else if (!profile?.partner_id) {
+      const secondSegment = (segments as string[])[1] as string | undefined;
+      if (secondSegment !== 'pair') router.replace('/(auth)/pair');
+    } else {
+      if (inAuthGroup) router.replace('/(tabs)');
+    }
+  }, [session, loading, profile, segments]);
+
+  return <Slot />;
+}
 
 export default function RootLayout() {
   const [loaded, error] = useFonts({
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
   });
+  const colorScheme = useColorScheme();
 
-  // Expo Router uses Error Boundaries to catch errors in the navigation tree.
   useEffect(() => {
     if (error) throw error;
   }, [error]);
 
   useEffect(() => {
-    if (loaded) {
-      SplashScreen.hideAsync();
-    }
+    if (loaded) SplashScreen.hideAsync();
   }, [loaded]);
 
-  if (!loaded) {
-    return null;
-  }
-
-  return <RootLayoutNav />;
-}
-
-function RootLayoutNav() {
-  const colorScheme = useColorScheme();
+  if (!loaded) return null;
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
-      </Stack>
+      <AuthProvider>
+        <PowerSyncProvider>
+          <NotificationProvider>
+            <AuthGate />
+          </NotificationProvider>
+        </PowerSyncProvider>
+      </AuthProvider>
     </ThemeProvider>
   );
 }
