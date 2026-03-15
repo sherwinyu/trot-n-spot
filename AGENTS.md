@@ -427,3 +427,59 @@ jobs:
             adb install -r app.apk
             maestro test .maestro/full-smoke.yaml
 ```
+
+---
+
+## Cursor Cloud specific instructions
+
+This section is for cloud agents running in the Cursor Cloud VM (Ubuntu 24.04, Docker-in-Docker via Firecracker).
+
+### Services overview
+
+| Service | How to start | Port |
+|---------|-------------|------|
+| Metro / Expo web | `npx expo start --web` | 8081 |
+| Supabase (local) | `supabase start` | API: 54321, DB: 54322, Studio: 54323 |
+
+### Docker setup (required for Supabase)
+
+Docker must be running before `supabase start`. The VM needs fuse-overlayfs and iptables-legacy for Docker-in-Docker. If Docker isn't running:
+
+```bash
+sudo dockerd &>/tmp/dockerd.log &
+sleep 3
+```
+
+### Node version
+
+The project requires Node 20 (see `.nvmrc`). The VM may default to a different version. Always run:
+
+```bash
+source $HOME/.nvm/nvm.sh && nvm use 20
+```
+
+### Environment variables
+
+A `.env` file with `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY` is needed for the app to connect to Supabase. Create it after `supabase start` — the anon key is printed by `supabase status -o env`.
+
+### Web preview gotchas
+
+- `app.json` web output was changed from `"static"` to `"single"` (SPA mode) to avoid SSR crashes. `expo-secure-store` is native-only and crashes the Node.js SSR render step.
+- `lib/supabase.ts` uses `Platform.OS` detection: `localStorage` on web, `SecureStore` on native.
+- The login page shows a dev-only email form pre-filled with `test-sherwin@quest.dev` / `testpass123`.
+- After login, the app may show the "Pair with Partner" page if the profile's `partner_id` is not recognized. Running `supabase db reset` re-seeds paired test users.
+
+### Lint / Test / Build
+
+- **TypeScript**: `npx tsc --noEmit` — no config beyond `tsconfig.json` needed
+- **Jest**: not yet configured (no `jest.config.ts` or test dependencies in `package.json`)
+- **Lint**: no ESLint configured yet
+- **Build**: see `AGENTS.md` "Build Caching" section above for native APK builds
+
+### Supabase CLI on Linux
+
+The `scripts/setup-dev.sh` script is macOS-oriented (uses `brew`, `/usr/libexec/java_home`, downloads macOS Android SDK). On the Linux VM, install Supabase CLI directly from GitHub releases:
+
+```bash
+curl -fsSL "https://github.com/supabase/cli/releases/download/v2.78.1/supabase_linux_amd64.tar.gz" | tar -xz -C /tmp && sudo mv /tmp/supabase /usr/local/bin/supabase
+```
