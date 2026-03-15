@@ -1,12 +1,17 @@
-import { StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { StyleSheet, TouchableOpacity, ActivityIndicator, TextInput } from 'react-native';
 import { useState } from 'react';
 import { Text, View } from '@/components/Themed';
 import { useAuth } from '@/hooks/useAuth';
+import { signInWithEmail, signUpWithEmail } from '@/lib/auth';
 
 export default function LoginScreen() {
   const { signIn } = useAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Dev email auth
+  const [email, setEmail] = useState(__DEV__ ? 'test-sherwin@quest.dev' : '');
+  const [password, setPassword] = useState(__DEV__ ? 'testpass123' : '');
 
   const handleSignIn = async () => {
     setLoading(true);
@@ -20,6 +25,31 @@ export default function LoginScreen() {
     }
   };
 
+  const handleEmailSignIn = async () => {
+    if (!email || !password) {
+      setError('Email and password required');
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      await signInWithEmail(email, password);
+    } catch (err: any) {
+      // If user doesn't exist, sign up instead
+      if (err.message?.includes('Invalid login credentials')) {
+        try {
+          await signUpWithEmail(email, password);
+        } catch (signUpErr: any) {
+          setError(signUpErr.message ?? 'Sign up failed');
+        }
+      } else {
+        setError(err.message ?? 'Sign in failed');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -27,8 +57,40 @@ export default function LoginScreen() {
         <Text style={styles.subtitle}>Scavenger hunts for couples</Text>
       </View>
 
+      {__DEV__ && (
+        <View style={styles.devSection}>
+          <Text style={styles.devLabel}>Dev Login</Text>
+          <TextInput
+            style={styles.input}
+            value={email}
+            onChangeText={setEmail}
+            placeholder="Email"
+            autoCapitalize="none"
+            keyboardType="email-address"
+          />
+          <TextInput
+            style={styles.input}
+            value={password}
+            onChangeText={setPassword}
+            placeholder="Password"
+            secureTextEntry
+          />
+          <TouchableOpacity
+            style={styles.devButton}
+            onPress={handleEmailSignIn}
+            disabled={loading}
+          >
+            {loading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.buttonText}>Sign In / Sign Up</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      )}
+
       <TouchableOpacity
-        style={styles.button}
+        style={[styles.button, __DEV__ && styles.googleButtonDev]}
         onPress={handleSignIn}
         disabled={loading}
       >
@@ -53,7 +115,7 @@ const styles = StyleSheet.create({
   },
   header: {
     alignItems: 'center',
-    marginBottom: 64,
+    marginBottom: 48,
   },
   title: {
     fontSize: 48,
@@ -64,6 +126,39 @@ const styles = StyleSheet.create({
     color: '#999',
     marginTop: 8,
   },
+  devSection: {
+    width: '100%',
+    marginBottom: 24,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    borderRadius: 12,
+    backgroundColor: '#fafafa',
+  },
+  devLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#999',
+    textTransform: 'uppercase',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    marginBottom: 8,
+    backgroundColor: '#fff',
+  },
+  devButton: {
+    backgroundColor: '#34A853',
+    paddingVertical: 14,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 4,
+  },
   button: {
     backgroundColor: '#4285F4',
     paddingHorizontal: 32,
@@ -71,6 +166,9 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     width: '100%',
     alignItems: 'center',
+  },
+  googleButtonDev: {
+    backgroundColor: '#999',
   },
   buttonText: {
     color: '#fff',
