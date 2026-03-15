@@ -4,19 +4,54 @@ Instructions for a long-running code agent (e.g., Claude Code) to build, install
 
 ---
 
-## Environment Prerequisites
+## Environment Setup
 
-One-time setup on the dev machine:
+### Quick Start
 
-1. **Android SDK** installed via Android Studio or `sdkmanager`
-2. **System image**: `sdkmanager "system-images;android-34;google_apis;arm64-v8a"` (use `x86_64` on Intel)
-3. **AVD created**:
+Run the automated setup script to install all CLI tools and verify the environment:
+
+```bash
+scripts/setup-dev.sh
+```
+
+This handles everything except two manual steps that require sudo or a GUI:
+
+1. **JDK 17** (requires sudo):
    ```bash
-   avdmanager create avd -n quest-test -k "system-images;android-34;google_apis;arm64-v8a" -d pixel_6
+   brew install --cask zulu@17
    ```
-4. `ANDROID_HOME` / `ANDROID_SDK_ROOT` set in shell profile
-5. **Maestro CLI**: `curl -Ls "https://get.maestro.mobile.dev" | bash`
-6. **Supabase CLI**: `npm install -g supabase`
+2. **Android Studio** (GUI installer):
+   - Download from https://developer.android.com/studio
+   - Open Android Studio → Settings → SDK Manager → install Android 34 SDK + emulator
+   - After install, the setup script will detect it and configure the AVD
+
+### What the Setup Script Does
+
+`scripts/setup-dev.sh` performs these steps:
+
+1. **Node 20** — switches via nvm (expects `.nvmrc` in project root)
+2. **npm dependencies** — runs `npm install`
+3. **EAS CLI** — `npm install -g eas-cli`
+4. **Supabase CLI** — installs via Homebrew (`brew install supabase/tap/supabase`)
+5. **Maestro CLI** — `curl -Ls "https://get.maestro.mobile.dev" | bash`
+6. **Android AVD** — creates `quest-test` AVD (Pixel 6, API 34) if Android SDK is present
+7. **Verification** — checks all tools are available and prints a status report
+
+### Environment Variables
+
+The setup script will remind you if these are missing. Add to your shell profile (`~/.zshrc`):
+
+```bash
+# Android SDK (set by Android Studio installer, verify path)
+export ANDROID_HOME="$HOME/Library/Android/sdk"
+export PATH="$PATH:$ANDROID_HOME/emulator:$ANDROID_HOME/platform-tools:$ANDROID_HOME/cmdline-tools/latest/bin"
+
+# Maestro
+export PATH="$PATH:$HOME/.maestro/bin"
+
+# Java (after installing zulu@17)
+export JAVA_HOME=$(/usr/libexec/java_home -v 17 2>/dev/null)
+```
 
 ---
 
@@ -214,54 +249,24 @@ npx supabase db reset
 The complete build → install → test → verify cycle:
 
 ```bash
-#!/bin/bash
-# scripts/test-android.sh
-
-set -e
-
-echo "=== Starting local Supabase ==="
-npx supabase start
-npx supabase db reset
-
-echo "=== Checking emulator ==="
-if ! adb devices | grep -q emulator; then
-  emulator -avd quest-test -no-window -no-audio -gpu swiftshader_indirect &
-  adb wait-for-device
-  adb shell 'while [[ "$(getprop sys.boot_completed)" != "1" ]]; do sleep 1; done'
-fi
-
-echo "=== Running unit tests ==="
-npx jest --ci --coverage
-
-echo "=== Building Android dev client ==="
-# Skip if .apk already exists and no native changes
-eas build --profile development --platform android --local
-
-echo "=== Installing on emulator ==="
-adb install -r ./build-output/app.apk
-
-echo "=== Starting Metro ==="
-npx expo start --android &
-METRO_PID=$!
-sleep 10  # Wait for bundler
-
-echo "=== Running E2E smoke test ==="
-adb logcat -c  # Clear logs
-maestro test .maestro/full-smoke.yaml
-
-echo "=== Capturing results ==="
-adb exec-out screencap -p > test-results/final-state.png
-adb logcat -d -s ReactNativeJS:V > test-results/app-logs.txt
-
-echo "=== Cleaning up ==="
-kill $METRO_PID
-
-echo "=== Done ==="
+scripts/test-android.sh
 ```
 
-**For JS-only changes** (no new native modules): skip the build step. Metro hot-reloads automatically. Just save the file and re-run Maestro flows.
+See `scripts/test-android.sh` for the full implementation. Summary:
 
-**For native changes** (new Expo module, config plugin): must rebuild with `eas build ... --local`.
+1. Start local Supabase + reset seed data
+2. Ensure Android emulator is running (start headlessly if not)
+3. Run unit tests (`npx jest --ci`)
+4. Build Android dev client (skip if `.apk` exists and no native changes)
+5. Install on emulator
+6. Start Metro bundler
+7. Run Maestro E2E smoke test
+8. Capture screenshots + logs to `test-results/`
+9. Clean up
+
+**For JS-only changes**: skip the build step — Metro hot-reloads automatically. Save the file and re-run Maestro flows.
+
+**For native changes** (new Expo module, config plugin): must rebuild with `eas build --profile development --platform android --local`.
 
 ---
 
@@ -269,12 +274,13 @@ echo "=== Done ==="
 
 | File | Purpose |
 |------|---------|
+| `scripts/setup-dev.sh` | One-time dev environment setup (CLI tools, AVD, verification) |
+| `scripts/test-android.sh` | Full test cycle: emulator + build + install + test + report |
 | `jest.config.ts` | Jest configuration |
 | `tests/setup.ts` | Test setup (mocks for PowerSync, Supabase, Expo modules) |
 | `.maestro/config.yaml` | Maestro global config (app ID, timeouts) |
 | `.maestro/full-smoke.yaml` | E2E smoke test covering all core flows |
 | `supabase/seed.sql` | Deterministic test data |
-| `scripts/test-android.sh` | One-shot: emulator + build + install + test + report |
 | `test-assets/` | Static images for deterministic camera/photo tests |
 
 ---
