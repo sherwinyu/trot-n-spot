@@ -57,6 +57,77 @@ export JAVA_HOME=$(/usr/libexec/java_home -v 17 2>/dev/null)
 
 ---
 
+## Sandbox & Agent Shell Configuration
+
+### The Shell Problem
+
+Each Bash tool call runs in a fresh shell — nvm, ANDROID_HOME, JAVA_HOME, and PATH are lost between calls. Always prefix commands with:
+
+```bash
+source scripts/env.sh && <your command>
+```
+
+This sources nvm, sets JAVA_HOME, ANDROID_HOME, and adds all tool paths.
+
+### Sandbox Restrictions
+
+Claude Code's sandbox blocks certain operations. Here's what requires what:
+
+**Works in sandbox** (no special config):
+- `npx expo start`, `npx jest`, `npx tsc` — all Node/npm commands
+- `git` commands
+- File reads/writes within the project directory
+- `curl` to allowlisted hosts
+
+**Requires `dangerouslyDisableSandbox: true`**:
+- `adb *` — ADB daemon uses a TCP socket on `localhost:5037`
+- `emulator *` — emulator uses gRPC + multiple localhost ports
+- `maestro *` — connects to ADB and emulator via network
+- `eas build --local` — spawns Gradle which needs network + temp file access
+- `npx supabase start` — launches Docker containers with network access
+- `npx expo start --android` — needs to communicate with ADB to launch the app
+
+**Works in sandbox but needs network allowlist**:
+- `npx expo start --web` — serves on `localhost:8081`
+
+**Requires user's terminal** (interactive prompts that agents can't handle):
+- `eas login` — password prompt
+- `eas init` — confirmation prompt
+- `brew install --cask *` — sudo password prompt
+
+### Recommended Workflow for Agents
+
+```bash
+# 1. Source env (works in sandbox)
+source scripts/env.sh
+
+# 2. Code changes (works in sandbox)
+# Edit files, run TypeScript checks, run Jest tests
+
+# 3. Emulator + app interaction (needs dangerouslyDisableSandbox)
+source scripts/env.sh && adb devices
+source scripts/env.sh && adb exec-out screencap -p > test-results/screen.png
+source scripts/env.sh && adb install -r build-output/app.apk
+
+# 4. Start Metro + connect to emulator (needs dangerouslyDisableSandbox)
+source scripts/env.sh && npx expo start --android
+
+# 5. Screenshots — take with adb, then Read the file to see it
+adb exec-out screencap -p > test-results/screen.png
+# Then use the Read tool on test-results/screen.png
+```
+
+### Build Caching
+
+Native builds (`eas build --local`) take ~10 minutes. The output APK at `build-output/app.apk` persists across sessions. Only rebuild when:
+- A new native dependency is added (e.g., `expo-camera`, `react-native-maps`)
+- `app.json` config plugins change
+- EAS build profile changes
+
+For JS-only changes, Metro hot-reloads automatically — no rebuild needed. Just edit, save, and re-screenshot.
+
+---
+
 ## Testing Path 1: Web Preview (Chrome)
 
 The fastest feedback loop. No emulator, no native build. Expo renders the app in a browser and an agent can interact with it via Chrome DevTools / browser automation.
