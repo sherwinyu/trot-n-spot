@@ -1,11 +1,11 @@
 #!/bin/bash
 # scripts/setup-dev.sh
 # One-time dev environment setup for Quest (trot-n-spot).
-# Installs CLI tools, configures Android AVD, and verifies everything works.
+# Installs CLI tools, Android SDK (CLI-only, no Android Studio needed),
+# configures Android AVD, and verifies everything works.
 #
-# Manual steps required before running:
-#   1. brew install --cask zulu@17        (requires sudo)
-#   2. Install Android Studio             (GUI installer)
+# Manual step required before running:
+#   brew install --cask zulu@17   (requires sudo)
 
 set -euo pipefail
 
@@ -23,7 +23,19 @@ echo " Quest (trot-n-spot) Dev Setup"
 echo "======================================="
 echo ""
 
+# ── Java ─────────────────────────────────────────────────────
+echo "--- Java (JDK 17) ---"
+if /usr/libexec/java_home -v 17 &>/dev/null; then
+  export JAVA_HOME=$(/usr/libexec/java_home -v 17)
+  ok "JDK 17 at $JAVA_HOME"
+else
+  fail "JDK 17 not found"
+  warn "Run: brew install --cask zulu@17  (requires sudo)"
+  exit 1
+fi
+
 # ── Node via nvm ─────────────────────────────────────────────
+echo ""
 echo "--- Node.js ---"
 if [ -f "$HOME/.nvm/nvm.sh" ]; then
   source "$HOME/.nvm/nvm.sh"
@@ -67,18 +79,6 @@ else
   fi
 fi
 
-# ── Java ─────────────────────────────────────────────────────
-echo ""
-echo "--- Java (JDK 17) ---"
-if /usr/libexec/java_home -v 17 &>/dev/null; then
-  JAVA_HOME=$(/usr/libexec/java_home -v 17)
-  export JAVA_HOME
-  ok "JDK 17 at $JAVA_HOME"
-else
-  fail "JDK 17 not found"
-  warn "Run: brew install --cask zulu@17  (requires sudo)"
-fi
-
 # ── Maestro CLI ──────────────────────────────────────────────
 echo ""
 echo "--- Maestro CLI ---"
@@ -96,64 +96,91 @@ else
   fi
 fi
 
-# ── Android SDK ──────────────────────────────────────────────
+# ── Android SDK (CLI-only) ───────────────────────────────────
 echo ""
 echo "--- Android SDK ---"
-# Try common locations if ANDROID_HOME is not set
-if [ -z "${ANDROID_HOME:-}" ]; then
-  if [ -d "$HOME/Library/Android/sdk" ]; then
-    export ANDROID_HOME="$HOME/Library/Android/sdk"
-  fi
+
+# Default SDK location (matches Android Studio convention)
+export ANDROID_HOME="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
+
+if [ ! -f "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
+  echo "Installing Android command-line tools..."
+  mkdir -p "$ANDROID_HOME/cmdline-tools"
+
+  CMDLINE_TOOLS_URL="https://dl.google.com/android/repository/commandlinetools-mac-11076708_latest.zip"
+  curl -L -o /tmp/cmdline-tools.zip "$CMDLINE_TOOLS_URL" 2>/dev/null
+  unzip -q /tmp/cmdline-tools.zip -d /tmp/cmdline-tools-temp
+  mv /tmp/cmdline-tools-temp/cmdline-tools "$ANDROID_HOME/cmdline-tools/latest"
+  rm /tmp/cmdline-tools.zip
+  find /tmp/cmdline-tools-temp -delete 2>/dev/null || true
+  ok "Command-line tools installed"
+else
+  ok "Command-line tools already present"
 fi
 
-if [ -n "${ANDROID_HOME:-}" ] && [ -d "$ANDROID_HOME" ]; then
-  export PATH="$PATH:$ANDROID_HOME/emulator:$ANDROID_HOME/platform-tools:$ANDROID_HOME/cmdline-tools/latest/bin"
-  ok "ANDROID_HOME=$ANDROID_HOME"
+export PATH="$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/emulator:$ANDROID_HOME/platform-tools"
 
-  # Check for required SDK components
-  if command -v sdkmanager &>/dev/null; then
-    echo "Checking SDK packages..."
-    # Install system image if missing
-    if ! sdkmanager --list_installed 2>/dev/null | grep -q "system-images;android-34"; then
-      echo "Installing Android 34 system image..."
-      yes | sdkmanager "system-images;android-34;google_apis;arm64-v8a" 2>/dev/null || true
-    fi
-    ok "SDK packages checked"
-  fi
+# Accept licenses
+echo "Accepting SDK licenses..."
+printf 'y\ny\ny\ny\ny\ny\ny\ny\n' | sdkmanager --licenses &>/dev/null
+ok "Licenses accepted"
 
-  # Create AVD if missing
-  if command -v avdmanager &>/dev/null; then
-    if ! avdmanager list avd 2>/dev/null | grep -q "quest-test"; then
-      echo "Creating quest-test AVD..."
-      echo "no" | avdmanager create avd \
-        -n quest-test \
-        -k "system-images;android-34;google_apis;arm64-v8a" \
-        -d pixel_6 \
-        2>/dev/null && ok "AVD quest-test created" || warn "AVD creation failed — may need system image installed first"
-    else
-      ok "AVD quest-test exists"
-    fi
-  fi
+# Install SDK packages
+REQUIRED_PACKAGES=(
+  "platform-tools"
+  "emulator"
+  "platforms;android-34"
+  "system-images;android-34;google_apis;arm64-v8a"
+)
 
-  # Check adb
-  if command -v adb &>/dev/null; then
-    ok "adb available"
+for pkg in "${REQUIRED_PACKAGES[@]}"; do
+  if sdkmanager --list_installed 2>/dev/null | grep -q "$pkg"; then
+    ok "$pkg already installed"
   else
-    warn "adb not found in PATH"
+    echo "Installing $pkg..."
+    sdkmanager "$pkg" 2>/dev/null
+    ok "$pkg installed"
   fi
+done
 
-  # Check emulator
-  if command -v emulator &>/dev/null; then
-    ok "emulator available"
-  else
-    warn "emulator not found in PATH"
-  fi
+# ── Android AVD ──────────────────────────────────────────────
+echo ""
+echo "--- Android AVD ---"
+if avdmanager list avd 2>/dev/null | grep -q "quest-test"; then
+  ok "AVD quest-test exists"
 else
-  fail "Android SDK not found"
-  warn "Install Android Studio from https://developer.android.com/studio"
-  warn "Then add to ~/.zshrc:"
-  warn '  export ANDROID_HOME="$HOME/Library/Android/sdk"'
-  warn '  export PATH="$PATH:$ANDROID_HOME/emulator:$ANDROID_HOME/platform-tools:$ANDROID_HOME/cmdline-tools/latest/bin"'
+  echo "Creating quest-test AVD..."
+  echo "no" | avdmanager create avd \
+    -n quest-test \
+    -k "system-images;android-34;google_apis;arm64-v8a" \
+    -d pixel_6 \
+    2>/dev/null && ok "AVD quest-test created" || warn "AVD creation failed"
+fi
+
+# ── Shell environment check ──────────────────────────────────
+echo ""
+echo "--- Shell Environment ---"
+ZSHRC="$HOME/.zshrc"
+MISSING_EXPORTS=()
+
+if ! grep -q 'ANDROID_HOME' "$ZSHRC" 2>/dev/null; then
+  MISSING_EXPORTS+=('export ANDROID_HOME="$HOME/Library/Android/sdk"')
+  MISSING_EXPORTS+=('export PATH="$PATH:$ANDROID_HOME/emulator:$ANDROID_HOME/platform-tools:$ANDROID_HOME/cmdline-tools/latest/bin"')
+fi
+if ! grep -q '.maestro/bin' "$ZSHRC" 2>/dev/null; then
+  MISSING_EXPORTS+=('export PATH="$PATH:$HOME/.maestro/bin"')
+fi
+if ! grep -q 'JAVA_HOME' "$ZSHRC" 2>/dev/null; then
+  MISSING_EXPORTS+=('export JAVA_HOME=$(/usr/libexec/java_home -v 17 2>/dev/null)')
+fi
+
+if [ ${#MISSING_EXPORTS[@]} -gt 0 ]; then
+  warn "Add these to your ~/.zshrc:"
+  for line in "${MISSING_EXPORTS[@]}"; do
+    echo "  $line"
+  done
+else
+  ok "Shell environment configured"
 fi
 
 # ── Summary ──────────────────────────────────────────────────
@@ -165,20 +192,23 @@ echo ""
 
 MISSING=()
 
-command -v node &>/dev/null      && ok "Node $(node --version)"         || { fail "Node"; MISSING+=("node"); }
-command -v eas &>/dev/null       && ok "EAS CLI"                        || { fail "EAS CLI"; MISSING+=("eas"); }
-command -v supabase &>/dev/null  && ok "Supabase CLI"                   || { fail "Supabase CLI"; MISSING+=("supabase"); }
-command -v maestro &>/dev/null   && ok "Maestro"                        || { fail "Maestro"; MISSING+=("maestro"); }
-/usr/libexec/java_home -v 17 &>/dev/null && ok "JDK 17"                || { fail "JDK 17"; MISSING+=("java"); }
-[ -n "${ANDROID_HOME:-}" ]       && ok "Android SDK"                    || { fail "Android SDK"; MISSING+=("android"); }
+command -v node &>/dev/null             && ok "Node $(node --version)"       || { fail "Node"; MISSING+=("node"); }
+command -v eas &>/dev/null              && ok "EAS CLI"                      || { fail "EAS CLI"; MISSING+=("eas"); }
+command -v supabase &>/dev/null         && ok "Supabase CLI"                 || { fail "Supabase CLI"; MISSING+=("supabase"); }
+command -v maestro &>/dev/null          && ok "Maestro"                      || { fail "Maestro"; MISSING+=("maestro"); }
+/usr/libexec/java_home -v 17 &>/dev/null && ok "JDK 17"                     || { fail "JDK 17"; MISSING+=("java"); }
+command -v emulator &>/dev/null         && ok "Android Emulator"             || { fail "Android Emulator"; MISSING+=("emulator"); }
+command -v adb &>/dev/null              && ok "ADB"                          || { fail "ADB"; MISSING+=("adb"); }
+avdmanager list avd 2>/dev/null | grep -q "quest-test" && ok "AVD quest-test" || { fail "AVD quest-test"; MISSING+=("avd"); }
 
 echo ""
 if [ ${#MISSING[@]} -eq 0 ]; then
   echo -e "${GREEN}All tools installed! Ready to develop.${NC}"
   echo ""
   echo "Next steps:"
-  echo "  npx expo start --android    # Start dev server"
-  echo "  scripts/test-android.sh     # Full test cycle"
+  echo "  npx expo start --android    # Start dev server + emulator"
+  echo "  npx expo start --web        # Start dev server + web preview"
+  echo "  scripts/test-android.sh     # Full Android test cycle"
 else
   echo -e "${YELLOW}Missing tools: ${MISSING[*]}${NC}"
   echo "Fix the issues above and re-run this script."

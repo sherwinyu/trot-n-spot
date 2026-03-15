@@ -1,6 +1,9 @@
 # Agent Testing & Verification
 
-Instructions for a long-running code agent (e.g., Claude Code) to build, install, test, and verify the Quest app on Android — entirely from the CLI.
+Instructions for a long-running code agent (e.g., Claude Code) to build, install, test, and verify the Quest app — entirely from the CLI. Two testing paths are available:
+
+1. **Android emulator** (CLI-only, no Android Studio) — full native testing
+2. **Web preview via Chrome** — fast visual iteration, no emulator needed
 
 ---
 
@@ -14,48 +17,95 @@ Run the automated setup script to install all CLI tools and verify the environme
 scripts/setup-dev.sh
 ```
 
-This handles everything except two manual steps that require sudo or a GUI:
+This handles everything automatically except one manual step that requires sudo:
 
-1. **JDK 17** (requires sudo):
-   ```bash
-   brew install --cask zulu@17
-   ```
-2. **Android Studio** (GUI installer):
-   - Download from https://developer.android.com/studio
-   - Open Android Studio → Settings → SDK Manager → install Android 34 SDK + emulator
-   - After install, the setup script will detect it and configure the AVD
+```bash
+brew install --cask zulu@17   # JDK 17 (requires sudo)
+```
+
+No Android Studio needed — the setup script downloads the Android SDK command-line tools directly.
 
 ### What the Setup Script Does
 
 `scripts/setup-dev.sh` performs these steps:
 
-1. **Node 20** — switches via nvm (expects `.nvmrc` in project root)
-2. **npm dependencies** — runs `npm install`
-3. **EAS CLI** — `npm install -g eas-cli`
-4. **Supabase CLI** — installs via Homebrew (`brew install supabase/tap/supabase`)
-5. **Maestro CLI** — `curl -Ls "https://get.maestro.mobile.dev" | bash`
-6. **Android AVD** — creates `quest-test` AVD (Pixel 6, API 34) if Android SDK is present
-7. **Verification** — checks all tools are available and prints a status report
+1. **JDK 17** — verifies installation (required for Android SDK + Maestro)
+2. **Node 20** — switches via nvm (expects `.nvmrc` in project root)
+3. **npm dependencies** — runs `npm install`
+4. **EAS CLI** — `npm install -g eas-cli`
+5. **Supabase CLI** — installs via Homebrew (`brew install supabase/tap/supabase`)
+6. **Maestro CLI** — `curl -Ls "https://get.maestro.mobile.dev" | bash`
+7. **Android SDK** — downloads command-line tools, installs platform-tools, emulator, Android 34 system image
+8. **Android AVD** — creates `quest-test` AVD (Pixel 6, API 34)
+9. **Verification** — checks all tools are available and prints a status report
 
 ### Environment Variables
 
-The setup script will remind you if these are missing. Add to your shell profile (`~/.zshrc`):
+Add to `~/.zshrc` (the setup script will remind you if these are missing):
 
 ```bash
-# Android SDK (set by Android Studio installer, verify path)
+# Android SDK
 export ANDROID_HOME="$HOME/Library/Android/sdk"
 export PATH="$PATH:$ANDROID_HOME/emulator:$ANDROID_HOME/platform-tools:$ANDROID_HOME/cmdline-tools/latest/bin"
 
 # Maestro
 export PATH="$PATH:$HOME/.maestro/bin"
 
-# Java (after installing zulu@17)
+# Java
 export JAVA_HOME=$(/usr/libexec/java_home -v 17 2>/dev/null)
 ```
 
 ---
 
-## Emulator Management
+## Testing Path 1: Web Preview (Chrome)
+
+The fastest feedback loop. No emulator, no native build. Expo renders the app in a browser and an agent can interact with it via Chrome DevTools / browser automation.
+
+### Starting the Web Preview
+
+```bash
+npx expo start --web
+# App available at http://localhost:8081
+```
+
+### Agent Verification via Chrome
+
+A code agent with Chrome browser automation tools (e.g., Claude in Chrome MCP) can:
+
+1. Navigate to `http://localhost:8081`
+2. Interact with the app (tap buttons, fill forms, navigate tabs)
+3. Read page content and verify UI state
+4. Take screenshots for visual verification
+5. Read console logs for errors
+
+**Limitations of web preview**:
+- `expo-camera` and `expo-location` behave differently (browser APIs vs native)
+- Push notifications not available
+- PowerSync SQLite layer may not work (uses IndexedDB fallback on web)
+- Some React Native components may render slightly differently
+
+**Best for**: UI layout, navigation, component rendering, feed/history views, form interactions, styling. Not suitable for camera, location, or offline sync testing.
+
+### Web-Specific Test Commands
+
+```bash
+# Start web dev server
+npx expo start --web
+
+# Run unit tests (always works, no emulator)
+npx jest --ci
+
+# TypeScript check
+npx tsc --noEmit
+```
+
+---
+
+## Testing Path 2: Android Emulator (CLI-Only)
+
+Full native testing. Required for camera, location, push notifications, and offline sync.
+
+### Emulator Management
 
 ```bash
 # Start emulator headlessly (no GUI — works in CI and SSH sessions)
@@ -71,6 +121,25 @@ adb devices
 # Kill when done
 adb emu kill
 ```
+
+### Full Agent Workflow
+
+```bash
+scripts/test-android.sh              # Full cycle (build + install + test)
+scripts/test-android.sh --skip-build # JS-only changes (skip native build)
+```
+
+See `scripts/test-android.sh` for the full implementation. Summary:
+
+1. Start local Supabase + reset seed data
+2. Ensure Android emulator is running (start headlessly if not)
+3. Run unit tests (`npx jest --ci`)
+4. Build Android dev client (skip if `--skip-build` or `.apk` exists and no native changes)
+5. Install on emulator
+6. Start Metro bundler
+7. Run Maestro E2E smoke test
+8. Capture screenshots + logs to `test-results/`
+9. Clean up
 
 ---
 
@@ -146,7 +215,7 @@ appId: com.trotnspot.quest
 
 A code agent can't see the screen, but can capture and inspect what's rendered:
 
-**Screenshots**:
+**Screenshots** (Android emulator):
 ```bash
 # Capture current screen
 adb exec-out screencap -p > screen.png
@@ -155,7 +224,10 @@ adb exec-out screencap -p > screen.png
 # - screenshot: "after-quest-created.png"
 ```
 
-**View hierarchy** (like a DOM for Android):
+**Screenshots** (Web preview):
+- Use browser automation tools to capture the page
+
+**View hierarchy** (Android — like a DOM):
 ```bash
 adb shell uiautomator dump /sdcard/window_dump.xml
 adb pull /sdcard/window_dump.xml
@@ -164,7 +236,7 @@ adb pull /sdcard/window_dump.xml
 
 **Logs**:
 ```bash
-# React Native / Expo JS logs only
+# React Native / Expo JS logs (Android)
 adb logcat -s ReactNativeJS:V *:S
 
 # Full logcat with timestamps
@@ -172,17 +244,20 @@ adb logcat -v time | head -200
 
 # Clear before a test run
 adb logcat -c
+
+# Web: use browser console via automation tools
 ```
 
 ---
 
 ## Auth in Tests
 
-Google Sign-In doesn't work in automated emulator tests. Use one of these approaches:
+Google Sign-In doesn't work in automated emulator tests or headless web. Use one of these approaches:
 
 **Recommended (MVP)**: Add a test-only email/password login screen gated behind `__DEV__`:
 - Supabase email auth provider enabled for local/dev only
-- Maestro fills in `test-sherwin@quest.dev` / test password
+- Maestro fills in `test-sherwin@quest.dev` / test password (Android)
+- Browser automation fills in the same credentials (web)
 - Minimal code, fully automatable
 
 **Alternative**: Pre-seed the secure store with a valid Supabase session token before app launch using `adb shell` commands.
@@ -244,38 +319,12 @@ npx supabase db reset
 
 ---
 
-## Full Agent Workflow
-
-The complete build → install → test → verify cycle:
-
-```bash
-scripts/test-android.sh
-```
-
-See `scripts/test-android.sh` for the full implementation. Summary:
-
-1. Start local Supabase + reset seed data
-2. Ensure Android emulator is running (start headlessly if not)
-3. Run unit tests (`npx jest --ci`)
-4. Build Android dev client (skip if `.apk` exists and no native changes)
-5. Install on emulator
-6. Start Metro bundler
-7. Run Maestro E2E smoke test
-8. Capture screenshots + logs to `test-results/`
-9. Clean up
-
-**For JS-only changes**: skip the build step — Metro hot-reloads automatically. Save the file and re-run Maestro flows.
-
-**For native changes** (new Expo module, config plugin): must rebuild with `eas build --profile development --platform android --local`.
-
----
-
 ## Key Testing Files
 
 | File | Purpose |
 |------|---------|
-| `scripts/setup-dev.sh` | One-time dev environment setup (CLI tools, AVD, verification) |
-| `scripts/test-android.sh` | Full test cycle: emulator + build + install + test + report |
+| `scripts/setup-dev.sh` | One-time dev environment setup (CLI tools, Android SDK, AVD) |
+| `scripts/test-android.sh` | Full Android test cycle: emulator + build + install + test + report |
 | `jest.config.ts` | Jest configuration |
 | `tests/setup.ts` | Test setup (mocks for PowerSync, Supabase, Expo modules) |
 | `.maestro/config.yaml` | Maestro global config (app ID, timeouts) |
