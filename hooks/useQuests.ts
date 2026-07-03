@@ -14,10 +14,14 @@ export function useQuests() {
     if (!user) return;
     setLoading(true);
 
+    // Quests assigned to me never include location — that's the hunt.
+    const QUEST_COLUMNS_NO_LOCATION =
+      'id, creator_id, assignee_id, journey_id, status, description, photo_path, completion_photo_path, completion_journey_id, completed_at, created_at, updated_at';
+
     const [forMe, byMe, completed] = await Promise.all([
       supabase
         .from('quests')
-        .select('*')
+        .select(QUEST_COLUMNS_NO_LOCATION)
         .eq('assignee_id', user.id)
         .eq('status', 'active')
         .order('created_at', { ascending: false }),
