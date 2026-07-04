@@ -1,4 +1,4 @@
-import { StyleSheet, TouchableOpacity, ActivityIndicator, TextInput } from 'react-native';
+import { StyleSheet, TouchableOpacity, ActivityIndicator, TextInput, Image } from 'react-native';
 import { useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { Text, View } from '@/components/Themed';
@@ -62,6 +62,13 @@ export default function LoginScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
+        <View style={styles.logoBadge}>
+          <Image
+            source={require('../../assets/images/logo.png')}
+            style={styles.logo}
+            resizeMode="contain"
+          />
+        </View>
         <Text style={styles.title}>TrotNSpot</Text>
         <Text style={styles.subtitle}>Scavenger hunts for couples</Text>
       </View>
@@ -144,6 +151,25 @@ const styles = StyleSheet.create({
   header: {
     alignItems: 'center',
     marginBottom: 48,
+  },
+  logoBadge: {
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 5,
+  },
+  logo: {
+    width: 124,
+    height: 124,
   },
   title: {
     fontSize: 48,
