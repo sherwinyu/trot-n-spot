@@ -1,0 +1,8 @@
+# Minimal auth flow: dev email sign-in lands on the quest feed.
+appId: com.trotnspot.quest
+---
+- launchApp:
+    clearState: true
+- assertVisible: 'Quest'
+- tapOn: 'Sign In / Sign Up'
+- assertVisible: 'Quests for You'
