@@ -41,7 +41,9 @@ function PackCard({ pack, onChanged }: { pack: PackWithMembers; onChanged: () =>
       </Text>
       {canShareInvite && pack.invite_code && (
         <View style={styles.inviteRow}>
-          <Text style={styles.inviteCode}>{pack.invite_code}</Text>
+          <Text style={[styles.inviteCode, { backgroundColor: c.cardAlt }]}>
+            {pack.invite_code}
+          </Text>
           <TouchableOpacity style={styles.shareButton} onPress={handleShare}>
             <Text style={styles.shareButtonText}>Share Invite</Text>
           </TouchableOpacity>
@@ -116,7 +118,10 @@ export default function PacksScreen() {
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView
+      style={[styles.container, { backgroundColor: c.background }]}
+      contentContainerStyle={styles.content}
+    >
       <Text style={styles.title}>{hasPacks ? 'Your Packs' : 'Start Your Pack'}</Text>
       <Text style={styles.subtitle}>
         {hasPacks
@@ -128,7 +133,7 @@ export default function PacksScreen() {
         <PackCard key={pack.id} pack={pack} onChanged={refreshProfile} />
       ))}
 
-      <View style={styles.section}>
+      <View style={[styles.section, { backgroundColor: c.card }]}>
         <Text style={styles.label}>Create a Pack</Text>
         <TextInput
           style={[
@@ -150,13 +155,14 @@ export default function PacksScreen() {
         </TouchableOpacity>
       </View>
 
-      <View style={styles.divider} />
-
-      <View style={styles.section}>
+      <View style={[styles.section, { backgroundColor: c.card }]}>
         <Text style={styles.label}>Join a Pack</Text>
         <TextInput
           style={[
             styles.codeInput,
+            // Mono + letter-spacing only once there's a code — a spaced-out
+            // monospace placeholder sentence looks broken.
+            code.length > 0 && styles.codeInputFilled,
             { backgroundColor: c.inputBackground, color: c.inputText, borderColor: c.border },
           ]}
           value={code}
@@ -227,10 +233,14 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   inviteCode: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: 'bold',
     letterSpacing: 4,
     fontFamily: 'SpaceMono',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    overflow: 'hidden',
   },
   shareButton: {
     paddingHorizontal: 16,
@@ -250,6 +260,8 @@ const styles = StyleSheet.create({
   },
   section: {
     marginTop: 12,
+    borderRadius: 12,
+    padding: 16,
   },
   label: {
     fontSize: 14,
@@ -267,9 +279,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 8,
     padding: 14,
+    fontSize: 16,
+    textAlign: 'center',
+  },
+  codeInputFilled: {
     fontSize: 20,
     letterSpacing: 6,
-    textAlign: 'center',
     fontFamily: 'SpaceMono',
   },
   primaryButton: {
@@ -283,11 +298,6 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
-  },
-  divider: {
-    height: 1,
-    backgroundColor: '#e0e0e0',
-    marginVertical: 24,
   },
   doneButton: {
     paddingVertical: 14,

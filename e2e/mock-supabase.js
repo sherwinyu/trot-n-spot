@@ -312,7 +312,11 @@ const server = http.createServer(async (req, res) => {
         [id, body.email, body.password, JSON.stringify({ full_name: displayName })]
       );
       const user = { id, email: body.email, raw_user_meta_data: { full_name: displayName } };
-      return json(res, 200, { user: userJson(user), session: makeSession(user) });
+      // With autoconfirm, GoTrue returns the session at the TOP LEVEL of
+      // the signup response (access_token, user, ...) — auth-js treats a
+      // nested {user, session} shape as "confirmation required" and never
+      // signs in.
+      return json(res, 200, makeSession(user));
     }
 
     if (p === '/auth/v1/logout' && req.method === 'POST') {
