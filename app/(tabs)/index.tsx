@@ -2,6 +2,8 @@ import { StyleSheet, FlatList, TouchableOpacity, Image, RefreshControl } from 'r
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useCallback } from 'react';
 import { Text, View } from '@/components/Themed';
+import { useColorScheme } from '@/components/useColorScheme';
+import Colors from '@/constants/Colors';
 import { useQuests } from '@/hooks/useQuests';
 import { useSync } from '@/providers/SyncProvider';
 import { Quest } from '@/types/database';
@@ -11,6 +13,7 @@ import { useState, useEffect } from 'react';
 
 function QuestCard({ quest }: { quest: Quest }) {
   const router = useRouter();
+  const c = Colors[useColorScheme() ?? 'light'];
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
 
   useEffect(() => {
@@ -26,13 +29,13 @@ function QuestCard({ quest }: { quest: Quest }) {
 
   return (
     <TouchableOpacity
-      style={styles.card}
+      style={[styles.card, { backgroundColor: c.card }]}
       onPress={() => router.push(`/quest/${quest.id}`)}
     >
       {photoUrl ? (
         <Image source={{ uri: photoUrl }} style={styles.cardImage} />
       ) : (
-        <View style={[styles.cardImage, styles.imagePlaceholder]}>
+        <View style={[styles.cardImage, styles.imagePlaceholder, { backgroundColor: c.cardAlt }]}>
           <Text style={styles.placeholderIcon}>🔍</Text>
         </View>
       )}
