@@ -4,12 +4,19 @@ import { Text, View } from '@/components/Themed';
 import { useAuth } from '@/hooks/useAuth';
 import { signInWithEmail, signUpWithEmail } from '@/lib/auth';
 
+// Email/password auth is the only working sign-in until Google is configured,
+// so keep it available in dev and in preview/test builds (where __DEV__ is
+// false). Set EXPO_PUBLIC_ENABLE_EMAIL_LOGIN=true at build time to expose it;
+// a real production build without the flag stays Google-only.
+const EMAIL_LOGIN_ENABLED =
+  __DEV__ || process.env.EXPO_PUBLIC_ENABLE_EMAIL_LOGIN === 'true';
+
 export default function LoginScreen() {
   const { signIn } = useAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Dev email auth
+  // Prefill test creds in dev only; preview/test builds start blank.
   const [email, setEmail] = useState(__DEV__ ? 'test-sherwin@quest.dev' : '');
   const [password, setPassword] = useState(__DEV__ ? 'testpass123' : '');
 
@@ -57,9 +64,9 @@ export default function LoginScreen() {
         <Text style={styles.subtitle}>Scavenger hunts for couples</Text>
       </View>
 
-      {__DEV__ && (
+      {EMAIL_LOGIN_ENABLED && (
         <View style={styles.devSection}>
-          <Text style={styles.devLabel}>Dev Login</Text>
+          <Text style={styles.devLabel}>Email Login</Text>
           <TextInput
             style={styles.input}
             value={email}
@@ -90,7 +97,7 @@ export default function LoginScreen() {
       )}
 
       <TouchableOpacity
-        style={[styles.button, __DEV__ && styles.googleButtonDev]}
+        style={[styles.button, EMAIL_LOGIN_ENABLED && styles.googleButtonDev]}
         onPress={handleSignIn}
         disabled={loading}
       >
