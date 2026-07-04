@@ -1,12 +1,15 @@
 import { StyleSheet, TouchableOpacity, TextInput, Share, ActivityIndicator } from 'react-native';
 import { useState } from 'react';
 import { Text, View } from '@/components/Themed';
+import { useColorScheme } from '@/components/useColorScheme';
+import Colors from '@/constants/Colors';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
 import { notify } from '@/lib/notify';
 
 export default function PairScreen() {
   const { profile, refreshProfile } = useAuth();
+  const c = Colors[useColorScheme() ?? 'light'];
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -64,11 +67,16 @@ export default function PairScreen() {
       <View style={styles.inputSection}>
         <Text style={styles.label}>Partner's Code</Text>
         <TextInput
-          style={styles.input}
+          style={[
+            styles.input,
+            { backgroundColor: c.inputBackground, color: c.inputText, borderColor: c.border },
+          ]}
           value={code}
           onChangeText={setCode}
           placeholder="Enter 6-letter code"
+          placeholderTextColor={c.placeholder}
           autoCapitalize="characters"
+          autoCorrect={false}
           maxLength={6}
         />
         <TouchableOpacity

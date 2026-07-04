@@ -1,5 +1,7 @@
 import { StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { Text, View } from '@/components/Themed';
+import { useColorScheme } from '@/components/useColorScheme';
+import Colors from '@/constants/Colors';
 import { useAuth } from '@/hooks/useAuth';
 import { useJourney } from '@/hooks/useJourney';
 import { confirm } from '@/lib/notify';
@@ -8,6 +10,7 @@ import { formatTimer } from '@/lib/format';
 export default function ProfileScreen() {
   const { profile, partner, signOut } = useAuth();
   const { activeJourney, startJourney, endJourney, journeyDuration } = useJourney();
+  const c = Colors[useColorScheme() ?? 'light'];
 
   const handleSignOut = () => {
     confirm('Sign Out', 'Are you sure?', signOut, 'Sign Out');
@@ -27,7 +30,7 @@ export default function ProfileScreen() {
         )}
       </View>
 
-      <View style={styles.journeySection}>
+      <View style={[styles.journeySection, { backgroundColor: c.card }]}>
         <Text style={styles.sectionTitle}>Walk</Text>
         {activeJourney ? (
           <>

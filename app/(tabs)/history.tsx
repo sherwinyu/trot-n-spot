@@ -2,6 +2,8 @@ import { StyleSheet, FlatList, TouchableOpacity, Image, RefreshControl } from 'r
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useCallback } from 'react';
 import { Text, View } from '@/components/Themed';
+import { useColorScheme } from '@/components/useColorScheme';
+import Colors from '@/constants/Colors';
 import { useQuests } from '@/hooks/useQuests';
 import { Quest } from '@/types/database';
 import { supabase } from '@/lib/supabase';
@@ -10,6 +12,7 @@ import { useState, useEffect } from 'react';
 
 function HistoryCard({ quest }: { quest: Quest }) {
   const router = useRouter();
+  const c = Colors[useColorScheme() ?? 'light'];
   const [originalUrl, setOriginalUrl] = useState<string | null>(null);
   const [completionUrl, setCompletionUrl] = useState<string | null>(null);
 
@@ -37,21 +40,21 @@ function HistoryCard({ quest }: { quest: Quest }) {
 
   return (
     <TouchableOpacity
-      style={styles.card}
+      style={[styles.card, { backgroundColor: c.card }]}
       onPress={() => router.push(`/quest/${quest.id}`)}
     >
       <View style={styles.photos}>
         {originalUrl ? (
           <Image source={{ uri: originalUrl }} style={styles.photo} />
         ) : (
-          <View style={[styles.photo, styles.photoPlaceholder]}>
+          <View style={[styles.photo, styles.photoPlaceholder, { backgroundColor: c.cardAlt }]}>
             <Text style={styles.placeholderIcon}>🔍</Text>
           </View>
         )}
         {completionUrl ? (
           <Image source={{ uri: completionUrl }} style={styles.photo} />
         ) : (
-          <View style={[styles.photo, styles.photoPlaceholder]}>
+          <View style={[styles.photo, styles.photoPlaceholder, { backgroundColor: c.cardAlt }]}>
             <Text style={styles.placeholderIcon}>✅</Text>
           </View>
         )}

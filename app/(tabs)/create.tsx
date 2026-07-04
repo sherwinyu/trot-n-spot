@@ -1,6 +1,8 @@
 import { StyleSheet, TouchableOpacity, TextInput, Image, ActivityIndicator } from 'react-native';
 import { useState } from 'react';
 import { Text, View } from '@/components/Themed';
+import { useColorScheme } from '@/components/useColorScheme';
+import Colors from '@/constants/Colors';
 import { useCreateQuest } from '@/hooks/useCreateQuest';
 import { useJourney } from '@/hooks/useJourney';
 import { capturePhoto } from '@/lib/photos';
@@ -9,6 +11,7 @@ import { notify } from '@/lib/notify';
 export default function CreateScreen() {
   const { createQuest, loading, error } = useCreateQuest();
   const { activeJourney } = useJourney();
+  const c = Colors[useColorScheme() ?? 'light'];
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [description, setDescription] = useState('');
 
@@ -56,10 +59,14 @@ export default function CreateScreen() {
           <Image source={{ uri: photoUri }} style={styles.preview} />
 
           <TextInput
-            style={styles.descriptionInput}
+            style={[
+              styles.descriptionInput,
+              { backgroundColor: c.inputBackground, color: c.inputText, borderColor: c.border },
+            ]}
             value={description}
             onChangeText={setDescription}
             placeholder="Add a hint or description (optional)"
+            placeholderTextColor={c.placeholder}
             multiline
             maxLength={200}
           />
