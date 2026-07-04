@@ -259,7 +259,7 @@ maestro record .maestro/full-smoke.yaml --output smoke.mp4  # Record video
 /.maestro
   config.yaml              — Global config (app ID, launch arguments)
   login.yaml               — Auth flow (test account)
-  pair.yaml                — Partner pairing
+  packs.yaml               — Pack create/join (invite code)
   start-walk.yaml          — Journey start/end
   create-quest.yaml        — Quest creation
   complete-quest.yaml      — Quest completion
@@ -369,9 +369,9 @@ npx supabase db reset
 
 **Seed data** (`supabase/seed.sql`) should provide:
 - Two users: `test-sherwin@quest.dev` / `test-nadia@quest.dev` (email auth)
-- Pre-paired via `partner_id`
-- 3 active quests (2 assigned to Sherwin, 1 assigned to Nadia)
-- 2 completed quests with timestamps
+- Both members of a shared pack ("Sherwin & Nadia", invite code `WOOF01`)
+- 4 active quests (2 targeted at Sherwin, 1 at Nadia, 1 open to the pack)
+- 2 completed quests with timestamps and `finder_id` attribution
 - Note: seeded quests reference photo paths that don't exist in storage, so
   their cards intentionally render placeholder art (🔍/✅). Quests created
   through the app have real photos.
@@ -392,7 +392,7 @@ adb shell svc wifi disable && adb shell svc data disable   # Go offline
 # ... create quest: expect "Quest sent!" with the offline note and the
 #     "waiting to sync" banner on the feed ...
 adb shell svc wifi enable && adb shell svc data enable     # Come back online
-# ... foreground the app; banner clears and the quest reaches the partner ...
+# ... foreground the app; banner clears and the quest reaches the pack ...
 ```
 
 Queue semantics (ordering, retry-on-network-error, drop-on-permanent-error)
@@ -412,7 +412,7 @@ are covered by Jest in `lib/__tests__/offline.test.ts`.
 | `e2e/mock-supabase.js` | Supabase API emulation (auth/PostgREST-subset/storage) backed by Postgres |
 | `package.json` (`jest` key) + `jest.setup.js` | Jest config (jest-expo preset) and AsyncStorage mock |
 | `.maestro/full-smoke.yaml` | On-device smoke test (dev-client deep-link flow; photo capture excluded) |
-| `supabase/seed.sql` | Deterministic test data (paired dev users + sample quests) |
+| `supabase/seed.sql` | Deterministic test data (dev users in a shared pack + sample quests) |
 
 ---
 
@@ -478,7 +478,7 @@ A `.env` file with `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY
 - `app.json` web output was changed from `"static"` to `"single"` (SPA mode) to avoid SSR crashes. `expo-secure-store` is native-only and crashes the Node.js SSR render step.
 - `lib/supabase.ts` uses `Platform.OS` detection: `localStorage` on web, `SecureStore` on native.
 - The login page shows a dev-only email form pre-filled with `test-sherwin@quest.dev` / `testpass123`.
-- After login, the app may show the "Pair with Partner" page if the profile's `partner_id` is not recognized. Running `supabase db reset` re-seeds paired test users.
+- After login, the app shows the pack onboarding screen (create/join) if the user has no pack memberships. Running `supabase db reset` re-seeds the shared test pack.
 
 ### Lint / Test / Build
 
