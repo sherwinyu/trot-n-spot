@@ -4,14 +4,30 @@
 # reliably from Maestro on an emulator.
 #
 # Prereqs: local Supabase running with seed data (npx supabase db reset),
-# app built with dev env vars, emulator/device connected.
+# app built with dev env vars, emulator/device connected, Metro running.
+#
+# The app ships as an Expo dev client, so a bare `launchApp` lands on the dev
+# launcher rather than the app. Clear state, then deep-link straight to the
+# Metro bundler (the Android emulator reaches the host at 10.0.2.2:8081) so the
+# client connects deterministically without depending on launcher auto-detect.
 appId: com.trotnspot.quest
 ---
 - launchApp:
     clearState: true
+- stopApp
+- openLink: 'quest://expo-development-client/?url=http%3A%2F%2F10.0.2.2%3A8081'
+# Deep-linking into the dev client opens its developer menu over the app;
+# wait for it (first bundle is slow), advance past the intro, and close it.
+- extendedWaitUntil:
+    visible: 'Continue'
+    timeout: 120000
+- tapOn: 'Continue'
+- back
+- extendedWaitUntil:
+    visible: 'DEV LOGIN'
+    timeout: 30000
 
 # Dev email login (prefilled in __DEV__ builds)
-- assertVisible: 'Quest'
 - tapOn: 'Sign In / Sign Up'
 
 # Feed
@@ -24,9 +40,12 @@ appId: com.trotnspot.quest
 - assertNotVisible: 'Spotted at'
 - back
 
-# History
+# History (completed quests load asynchronously; text is "Found in 4 hours"
+# etc., so match as a regex — Maestro selectors are full-string regexes).
 - tapOn: 'History'
-- assertVisible: 'Found in'
+- extendedWaitUntil:
+    visible: 'Found in .*'
+    timeout: 60000
 
 # Journey start/end
 - tapOn: 'Profile'
