@@ -1,10 +1,51 @@
-# Quest (Trot-n-Spot) MVP Implementation Plan
+# TrotNSpot (trot-n-spot) MVP Implementation Plan
 
 ## Overview
 
-An async scavenger hunt app for couples during dog walks. One partner photographs something interesting and assigns it as a "quest"; the other must find and photograph it on a future walk. Built with React Native/Expo, Supabase, and PowerSync for offline-first capability.
+An async scavenger hunt app for couples during dog walks. One partner photographs something interesting and assigns it as a "quest"; the other must find and photograph it on a future walk. Built with React Native/Expo and Supabase.
 
 **Target users**: Sherwin + Nadia (two-player MVP, dev builds only)
+
+---
+
+## Status: MVP built (July 2026)
+
+Everything below this section is the **original plan, kept for reference**.
+The MVP is implemented and tested; see `CLAUDE.md` for current architecture
+and commands, `AGENTS.md` + `e2e/README.md` for testing. Where reality
+diverged from the plan:
+
+- **No PowerSync** (plan Phase 10). Deliberately dropped as over-engineering
+  for two users. Offline support is a small mutation queue + cached feed
+  (`lib/offline.ts`, `lib/sync.ts`, `providers/SyncProvider.tsx`): quest
+  create/complete work offline (photo + GPS captured at spot time) and replay
+  on reconnect. The location-privacy sync rules planned for PowerSync are
+  instead enforced by never selecting location columns for assignee-visible
+  fetches (`QUEST_COLUMNS_NO_LOCATION` in `types/database.ts`).
+- **Auth is email login** (plan Phase 2 wanted Google Sign-In). Google remains
+  a stub in `lib/auth.ts` pending Google Cloud Console setup. Email login
+  shows in dev builds and when `EXPO_PUBLIC_ENABLE_EMAIL_LOGIN=true`.
+- **Push notifications** (Phase 8) use a pg_net trigger (migration 006,
+  configured via the `app_config` table) → `send-push-notification` edge
+  function → Expo push API, rather than dashboard-configured webhooks.
+- **Three migrations the plan didn't anticipate**, all found by testing:
+  007 fixes infinite recursion in the profiles RLS policy; 008 adds table
+  grants to `authenticated` (RLS policies alone don't grant access); 009 pins
+  `search_path` on SECURITY DEFINER functions (signup was failing via GoTrue).
+- **App renamed** Quest → TrotNSpot (app id `com.trotnspot.quest` and scheme
+  `quest://` keep the old name). Dog logo on icon + login screen; dark mode
+  supported.
+- **Backend is live**: hosted Supabase project `xbegbjicfgsozazlbysc` — the
+  `preview` EAS profile builds against it (`eas.json`).
+- **Testing** went beyond the plan: Jest units, a no-Docker DB suite
+  (`scripts/db-test.sh`) asserting RLS/RPC behavior on plain Postgres, a
+  browser E2E (`e2e/run-e2e.js`) driving the full two-user story against a
+  mock Supabase API backed by real Postgres RLS, and Maestro dev-client
+  flows for on-device smoke tests.
+
+Remaining (not blocking daily use): Google Sign-In setup, push `app_config`
+rows + edge function deploy on the hosted project, end-to-end push
+verification on physical devices.
 
 ---
 

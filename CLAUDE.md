@@ -1,6 +1,6 @@
-# Quest (Trot-n-Spot)
+# TrotNSpot (trot-n-spot)
 
-Async scavenger hunt app for couples during dog walks. React Native/Expo + Supabase.
+Async scavenger hunt app for couples during dog walks. React Native/Expo + Supabase. (Working title was "Quest" — the Android/iOS app id `com.trotnspot.quest`, URL scheme `quest://`, and dev emails like `test-sherwin@quest.dev` keep that name.)
 
 ## Project Structure
 
@@ -9,9 +9,9 @@ See `MVP_PLAN.md` for full architecture, database schema, and phased build order
 ## Tech Stack
 
 - **Client**: React Native + Expo (Expo Router v4, file-based routing)
-- **Backend**: Supabase (PostgreSQL, Auth, Storage, Edge Functions)
+- **Backend**: Supabase (PostgreSQL, Auth, Storage, Edge Functions). A hosted project exists (`xbegbjicfgsozazlbysc.supabase.co`); the `preview` EAS profile bakes its URL/anon key in via env (see `eas.json`)
 - **Offline**: lightweight mutation queue + feed cache (`lib/offline.ts`, `lib/sync.ts`) — deliberately no PowerSync
-- **Auth**: Supabase Auth (dev email login; Google OAuth planned)
+- **Auth**: Supabase Auth email login (shown when `__DEV__` or `EXPO_PUBLIC_ENABLE_EMAIL_LOGIN=true` at build time; Google OAuth planned, currently a stub in `lib/auth.ts`)
 - **Push**: Expo Notifications (DB trigger → edge function → Expo push API)
 - **E2E Testing**: Playwright web E2E (`e2e/run-e2e.js`) + Maestro on device
 - **Unit Testing**: Jest; DB tests via `scripts/db-test.sh` (plain Postgres, no Docker)
@@ -38,8 +38,8 @@ npx jest                          # Unit + component tests
 npx jest --watch                  # Watch mode
 scripts/db-test.sh                # Migrations + RLS + RPC tests (plain Postgres, no Docker)
 node e2e/run-e2e.js               # Browser E2E: full two-user flow vs mock Supabase (real Postgres RLS)
-maestro test .maestro/            # On-device E2E flows (needs emulator + local Supabase)
-maestro test .maestro/full-smoke.yaml  # Smoke test
+maestro test .maestro/            # On-device E2E flows (needs emulator + local Supabase + Metro running)
+maestro test .maestro/full-smoke.yaml  # Smoke test (flows deep-link into the dev client at 10.0.2.2:8081)
 
 # Supabase (local)
 npx supabase start                # Start local Supabase
@@ -59,8 +59,10 @@ adb exec-out screencap -p > screen.png   # Screenshot
 - Reads go through Supabase with a cached last-good copy (`useQuests`); offline writes queue in `lib/offline.ts` and replay via `SyncProvider`
 - Location fields are NEVER exposed to quest assignees — always select `QUEST_COLUMNS_NO_LOCATION` (types/database.ts) when fetching quests an assignee can see; location is fetched separately only for the creator or after completion
 - Photos compressed to max 1200px width, 80% JPEG quality before upload (`lib/photos.ts`)
+- Photo upload on native must go through FormData with the file URI (`lib/photos.ts`) — RN's `fetch()` cannot read `file://` URIs on Android
 - Use client-side UUIDs for offline-first record creation
 - `Alert.alert` is a no-op on web — use `notify`/`confirm` from `lib/notify.ts`
+- New SECURITY DEFINER DB functions must `set search_path = public` (see migration 009), and new tables need explicit grants to `authenticated` — RLS alone doesn't grant access (see migration 008)
 
 ## Agent Notes
 
