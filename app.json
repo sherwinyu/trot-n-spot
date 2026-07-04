@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Quest",
+    "name": "TrotNSpot",
     "slug": "trot-n-spot",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -16,9 +16,9 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.trotnspot.quest",
       "infoPlist": {
-        "NSCameraUsageDescription": "Quest needs camera access to photograph things for your partner to find.",
-        "NSLocationWhenInUseUsageDescription": "Quest records your location when you create a quest so you can see where you found things.",
-        "NSPhotoLibraryUsageDescription": "Quest needs photo library access to select photos for quests."
+        "NSCameraUsageDescription": "TrotNSpot needs camera access to photograph things for your partner to find.",
+        "NSLocationWhenInUseUsageDescription": "TrotNSpot records your location when you create a quest so you can see where you found things.",
+        "NSPhotoLibraryUsageDescription": "TrotNSpot needs photo library access to select photos for quests."
       }
     },
     "android": {
@@ -47,20 +47,20 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Quest needs camera access to photograph things for your partner to find."
+          "cameraPermission": "TrotNSpot needs camera access to photograph things for your partner to find."
         }
       ],
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Quest records your location when you create a quest so you can see where you found things.",
+          "locationWhenInUsePermission": "TrotNSpot records your location when you create a quest so you can see where you found things.",
           "isAndroidBackgroundLocationEnabled": false
         }
       ],
       [
         "expo-image-picker",
         {
-          "photosPermission": "Quest needs photo library access to select photos for quests."
+          "photosPermission": "TrotNSpot needs photo library access to select photos for quests."
         }
       ],
       [

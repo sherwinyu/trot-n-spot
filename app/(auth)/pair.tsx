@@ -43,7 +43,7 @@ export default function PairScreen() {
   const handleShare = async () => {
     if (!profile?.pair_code) return;
     await Share.share({
-      message: `Join me on Quest! My pair code is: ${profile.pair_code}`,
+      message: `Join me on TrotNSpot! My pair code is: ${profile.pair_code}`,
     });
   };
 

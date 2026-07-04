@@ -62,7 +62,7 @@ export default function LoginScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Quest</Text>
+        <Text style={styles.title}>TrotNSpot</Text>
         <Text style={styles.subtitle}>Scavenger hunts for couples</Text>
       </View>
 
