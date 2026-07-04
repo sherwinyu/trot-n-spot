@@ -1,0 +1,36 @@
+# Full smoke test: sign in, browse feed, open a quest, check history,
+# start/end a walk. Photo capture flows (create/complete) are covered by
+# the web E2E suite (e2e/run-e2e.js) — the system camera can't be driven
+# reliably from Maestro on an emulator.
+#
+# Prereqs: local Supabase running with seed data (npx supabase db reset),
+# app built with dev env vars, emulator/device connected.
+appId: com.trotnspot.quest
+---
+- launchApp:
+    clearState: true
+
+# Dev email login (prefilled in __DEV__ builds)
+- assertVisible: 'Quest'
+- tapOn: 'Sign In / Sign Up'
+
+# Feed
+- assertVisible: 'Quests for You'
+- assertVisible: 'Find this cool mural on Oak Street'
+
+# Quest detail (assignee view — location must not be shown)
+- tapOn: 'Find this cool mural on Oak Street'
+- assertVisible: 'I Found It!'
+- assertNotVisible: 'Spotted at'
+- back
+
+# History
+- tapOn: 'History'
+- assertVisible: 'Found in'
+
+# Journey start/end
+- tapOn: 'Profile'
+- tapOn: 'Start Walk'
+- assertVisible: 'End Walk'
+- tapOn: 'End Walk'
+- assertVisible: 'Start Walk'
