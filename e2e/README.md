@@ -47,6 +47,9 @@ Supabase instead: `npx supabase start` + `.env` from its printed keys.
 maestro test .maestro/full-smoke.yaml
 ```
 
+Metro must be running (`npx expo start`): the flows deep-link into the Expo
+dev client at `10.0.2.2:8081` and dismiss its developer menu before testing.
+
 What can only be verified on real hardware:
 - Camera capture (web E2E uses the file picker fallback)
 - GPS capture on native (web E2E uses browser geolocation)

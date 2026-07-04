@@ -1,9 +1,11 @@
 # Agent Testing & Verification
 
-Instructions for a long-running code agent (e.g., Claude Code) to build, install, test, and verify the Quest app — entirely from the CLI. Two testing paths are available:
+Instructions for a long-running code agent (e.g., Claude Code) to build, install, test, and verify the TrotNSpot app — entirely from the CLI. Testing paths, fastest first:
 
-1. **Android emulator** (CLI-only, no Android Studio) — full native testing
-2. **Web preview via Chrome** — fast visual iteration, no emulator needed
+1. **Unit + DB tests** — `npx jest` and `scripts/db-test.sh` (plain Postgres, no Docker/emulator)
+2. **Browser E2E** — `node e2e/run-e2e.js`: full two-user flow in Chromium against a mock Supabase API backed by real Postgres RLS (see `e2e/README.md`). Works even where Docker is unavailable (e.g. cloud agent sandboxes)
+3. **Web preview via Chrome** — fast visual iteration, no emulator needed
+4. **Android emulator** (CLI-only, no Android Studio) — full native testing via Maestro
 
 ---
 
@@ -150,12 +152,12 @@ A code agent with Chrome browser automation tools (e.g., Claude in Chrome MCP) c
 5. Read console logs for errors
 
 **Limitations of web preview**:
-- `expo-camera` and `expo-location` behave differently (browser APIs vs native)
-- Push notifications not available
-- PowerSync SQLite layer may not work (uses IndexedDB fallback on web)
+- Camera capture falls back to a file picker on web (`lib/photos.ts`); `expo-location` uses the browser geolocation API
+- Push notifications not available (`lib/notifications.ts` no-ops on web)
+- The offline queue persists to localStorage on web instead of native AsyncStorage — behavior is equivalent but not identical
 - Some React Native components may render slightly differently
 
-**Best for**: UI layout, navigation, component rendering, feed/history views, form interactions, styling. Not suitable for camera, location, or offline sync testing.
+**Best for**: UI layout, navigation, component rendering, feed/history views, form interactions, styling — and full-flow verification via `e2e/run-e2e.js`. Real camera/GPS/push still need a device.
 
 ### Web-Specific Test Commands
 
@@ -369,24 +371,32 @@ npx supabase db reset
 - Two users: `test-sherwin@quest.dev` / `test-nadia@quest.dev` (email auth)
 - Pre-paired via `partner_id`
 - 3 active quests (2 assigned to Sherwin, 1 assigned to Nadia)
-- 2 completed quests with photos and timestamps
-- Test photos in the storage bucket
+- 2 completed quests with timestamps
+- Note: seeded quests reference photo paths that don't exist in storage, so
+  their cards intentionally render placeholder art (🔍/✅). Quests created
+  through the app have real photos.
 
 `supabase db reset` restores this known state between test runs.
 
 ---
 
-## PowerSync in Tests
+## Offline Sync in Tests
 
-- Point PowerSync at the local Supabase instance during testing
-- For simpler test runs, bypass PowerSync and use direct Supabase queries (still validates UI and business logic)
-- To test offline sync: toggle connectivity on the emulator:
-  ```bash
-  adb shell svc wifi disable   # Go offline
-  # ... create quest, verify it's saved locally ...
-  adb shell svc wifi enable    # Come back online
-  # ... verify sync completes ...
-  ```
+There is no PowerSync — offline support is a lightweight mutation queue
+(`lib/offline.ts`) that captures quest create/complete while offline and
+replays via `SyncProvider` on reconnect/foreground. To test it on the
+emulator, toggle connectivity:
+
+```bash
+adb shell svc wifi disable && adb shell svc data disable   # Go offline
+# ... create quest: expect "Quest sent!" with the offline note and the
+#     "waiting to sync" banner on the feed ...
+adb shell svc wifi enable && adb shell svc data enable     # Come back online
+# ... foreground the app; banner clears and the quest reaches the partner ...
+```
+
+Queue semantics (ordering, retry-on-network-error, drop-on-permanent-error)
+are covered by Jest in `lib/__tests__/offline.test.ts`.
 
 ---
 
@@ -396,12 +406,13 @@ npx supabase db reset
 |------|---------|
 | `scripts/setup-dev.sh` | One-time dev environment setup (CLI tools, Android SDK, AVD) |
 | `scripts/test-android.sh` | Full Android test cycle: emulator + build + install + test + report |
-| `jest.config.ts` | Jest configuration |
-| `tests/setup.ts` | Test setup (mocks for PowerSync, Supabase, Expo modules) |
-| `.maestro/config.yaml` | Maestro global config (app ID, timeouts) |
-| `.maestro/full-smoke.yaml` | E2E smoke test covering all core flows |
-| `supabase/seed.sql` | Deterministic test data |
-| `test-assets/` | Static images for deterministic camera/photo tests |
+| `scripts/db-test.sh` | DB suite: migrations + RLS + RPC assertions on plain Postgres (no Docker) |
+| `supabase/tests/` | Supabase shim (auth/storage stand-ins) + SQL assertions used by db-test.sh |
+| `e2e/run-e2e.js` | Browser E2E: two-user story in Chromium vs mock Supabase (real Postgres RLS) |
+| `e2e/mock-supabase.js` | Supabase API emulation (auth/PostgREST-subset/storage) backed by Postgres |
+| `package.json` (`jest` key) + `jest.setup.js` | Jest config (jest-expo preset) and AsyncStorage mock |
+| `.maestro/full-smoke.yaml` | On-device smoke test (dev-client deep-link flow; photo capture excluded) |
+| `supabase/seed.sql` | Deterministic test data (paired dev users + sample quests) |
 
 ---
 
