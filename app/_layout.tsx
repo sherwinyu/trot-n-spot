@@ -7,7 +7,7 @@ import 'react-native-reanimated';
 
 import { useColorScheme } from '@/components/useColorScheme';
 import { AuthProvider, useAuth } from '@/providers/AuthProvider';
-import { PowerSyncProvider } from '@/providers/PowerSyncProvider';
+import { SyncProvider } from '@/providers/SyncProvider';
 import { NotificationProvider } from '@/providers/NotificationProvider';
 
 export { ErrorBoundary } from 'expo-router';
@@ -57,11 +57,11 @@ export default function RootLayout() {
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <AuthProvider>
-        <PowerSyncProvider>
+        <SyncProvider>
           <NotificationProvider>
             <AuthGate />
           </NotificationProvider>
-        </PowerSyncProvider>
+        </SyncProvider>
       </AuthProvider>
     </ThemeProvider>
   );

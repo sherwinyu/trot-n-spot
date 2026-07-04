@@ -1,13 +1,15 @@
 import { useState, useCallback } from 'react';
 import * as Crypto from 'expo-crypto';
-import * as ImageManipulator from 'expo-image-manipulator';
-import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
+import { useSync } from '@/providers/SyncProvider';
 import { getCurrentLocation } from '@/lib/location';
+import { syncCreateQuest } from '@/lib/sync';
+import { enqueue, isNetworkError } from '@/lib/offline';
 import { Quest } from '@/types/database';
 
 export function useCreateQuest() {
   const { user, partner } = useAuth();
+  const { refreshPendingCount } = useSync();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -19,7 +21,7 @@ export function useCreateQuest() {
     photoUri: string;
     description?: string;
     journeyId?: string;
-  }): Promise<Quest | null> => {
+  }): Promise<{ quest: Quest; queued: boolean } | null> => {
     if (!user || !partner) {
       setError('Must be signed in and paired');
       return null;
@@ -30,57 +32,56 @@ export function useCreateQuest() {
 
     try {
       const questId = Crypto.randomUUID();
-
-      // Get location
+      const createdAt = new Date().toISOString();
+      // Capture GPS now — it works offline and must reflect where the
+      // quest was spotted, not where we are when the upload syncs.
       const location = await getCurrentLocation();
 
-      // Compress photo
-      const manipulated = await ImageManipulator.manipulateAsync(
+      const payload = {
+        questId,
+        creatorId: user.id,
+        assigneeId: partner.id,
+        journeyId: journeyId ?? null,
+        description: description?.trim() || null,
         photoUri,
-        [{ resize: { width: 1200 } }],
-        { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
-      );
+        locationLat: location?.lat ?? null,
+        locationLng: location?.lng ?? null,
+        createdAt,
+      };
 
-      // Upload photo
-      const photoPath = `${user.id}/${questId}/original.jpg`;
-      const response = await fetch(manipulated.uri);
-      const blob = await response.blob();
-      const arrayBuffer = await blob.arrayBuffer();
+      const quest: Quest = {
+        id: questId,
+        creator_id: user.id,
+        assignee_id: partner.id,
+        journey_id: payload.journeyId,
+        status: 'active',
+        description: payload.description,
+        photo_path: `${user.id}/${questId}/original.jpg`,
+        location_lat: payload.locationLat,
+        location_lng: payload.locationLng,
+        completion_photo_path: null,
+        completion_journey_id: null,
+        completed_at: null,
+        created_at: createdAt,
+        updated_at: createdAt,
+      };
 
-      const { error: uploadError } = await supabase.storage
-        .from('quest-photos')
-        .upload(photoPath, arrayBuffer, {
-          contentType: 'image/jpeg',
-        });
-
-      if (uploadError) throw uploadError;
-
-      // Create quest row
-      const { data, error: insertError } = await supabase
-        .from('quests')
-        .insert({
-          id: questId,
-          creator_id: user.id,
-          assignee_id: partner.id,
-          journey_id: journeyId ?? null,
-          description: description ?? null,
-          photo_path: photoPath,
-          location_lat: location?.lat ?? null,
-          location_lng: location?.lng ?? null,
-        })
-        .select()
-        .single();
-
-      if (insertError) throw insertError;
-
-      return data as Quest;
+      try {
+        await syncCreateQuest(payload);
+        return { quest, queued: false };
+      } catch (err) {
+        if (!isNetworkError(err)) throw err;
+        await enqueue({ id: questId, type: 'create_quest', payload });
+        await refreshPendingCount();
+        return { quest, queued: true };
+      }
     } catch (err: any) {
       setError(err.message ?? 'Failed to create quest');
       return null;
     } finally {
       setLoading(false);
     }
-  }, [user, partner]);
+  }, [user, partner, refreshPendingCount]);
 
   return { createQuest, loading, error };
 }
