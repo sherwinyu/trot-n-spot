@@ -1,5 +1,6 @@
 import { StyleSheet, TouchableOpacity, ActivityIndicator, TextInput } from 'react-native';
 import { useState } from 'react';
+import { Ionicons } from '@expo/vector-icons';
 import { Text, View } from '@/components/Themed';
 import { useAuth } from '@/hooks/useAuth';
 import { signInWithEmail, signUpWithEmail } from '@/lib/auth';
@@ -15,6 +16,7 @@ export default function LoginScreen() {
   const { signIn } = useAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
 
   // Prefill test creds in dev only; preview/test builds start blank.
   const [email, setEmail] = useState(__DEV__ ? 'test-sherwin@quest.dev' : '');
@@ -72,16 +74,35 @@ export default function LoginScreen() {
             value={email}
             onChangeText={setEmail}
             placeholder="Email"
+            placeholderTextColor="#999"
             autoCapitalize="none"
+            autoCorrect={false}
             keyboardType="email-address"
           />
-          <TextInput
-            style={styles.input}
-            value={password}
-            onChangeText={setPassword}
-            placeholder="Password"
-            secureTextEntry
-          />
+          <View style={styles.passwordWrapper}>
+            <TextInput
+              style={[styles.input, styles.passwordInput]}
+              value={password}
+              onChangeText={setPassword}
+              placeholder="Password"
+              placeholderTextColor="#999"
+              secureTextEntry={!showPassword}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <TouchableOpacity
+              style={styles.eyeButton}
+              onPress={() => setShowPassword((v) => !v)}
+              accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons
+                name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                size={22}
+                color="#666"
+              />
+            </TouchableOpacity>
+          </View>
           <TouchableOpacity
             style={styles.devButton}
             onPress={handleEmailSignIn}
@@ -158,6 +179,27 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginBottom: 8,
     backgroundColor: '#fff',
+    // Explicit dark text so it stays visible on the white field in dark mode
+    // (otherwise the themed default renders white-on-white).
+    color: '#111',
+  },
+  passwordWrapper: {
+    position: 'relative',
+    justifyContent: 'center',
+    // Themed View defaults to an opaque themed background; keep it transparent
+    // so the card colour shows through around the input (no dark bar in dark mode).
+    backgroundColor: 'transparent',
+  },
+  passwordInput: {
+    paddingRight: 48,
+  },
+  eyeButton: {
+    position: 'absolute',
+    right: 4,
+    top: 0,
+    bottom: 8,
+    paddingHorizontal: 8,
+    justifyContent: 'center',
   },
   devButton: {
     backgroundColor: '#34A853',
