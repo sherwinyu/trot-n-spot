@@ -30,13 +30,32 @@ export async function compressPhoto(photoUri: string): Promise<string> {
 }
 
 export async function uploadPhoto(localUri: string, storagePath: string): Promise<void> {
-  const response = await fetch(localUri);
-  const blob = await response.blob();
-  const arrayBuffer = await blob.arrayBuffer();
+  if (Platform.OS === 'web') {
+    // On web the URI is a blob:/data: URL that fetch can read into a Blob.
+    const response = await fetch(localUri);
+    const blob = await response.blob();
+    const { error } = await supabase.storage
+      .from('quest-photos')
+      .upload(storagePath, blob, { contentType: 'image/jpeg', upsert: true });
+    if (error) throw error;
+    return;
+  }
+
+  // On native, React Native's fetch() can't read a local file:// URI on
+  // Android (it throws "Network request failed"), so we can't turn the photo
+  // into a Blob/ArrayBuffer in JS. Instead hand the file URI to a multipart
+  // FormData and let the native networking layer stream it — supabase-js
+  // sends a FormData body as-is.
+  const formData = new FormData();
+  formData.append('file', {
+    uri: localUri,
+    name: 'photo.jpg',
+    type: 'image/jpeg',
+  } as any);
 
   const { error } = await supabase.storage
     .from('quest-photos')
-    .upload(storagePath, arrayBuffer, { contentType: 'image/jpeg', upsert: true });
+    .upload(storagePath, formData, { contentType: 'image/jpeg', upsert: true });
 
   if (error) throw error;
 }

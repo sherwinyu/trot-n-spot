@@ -5,12 +5,22 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import 'react-native-reanimated';
 
+import { LogBox } from 'react-native';
+
 import { useColorScheme } from '@/components/useColorScheme';
 import { AuthProvider, useAuth } from '@/providers/AuthProvider';
 import { SyncProvider } from '@/providers/SyncProvider';
 import { NotificationProvider } from '@/providers/NotificationProvider';
 
 export { ErrorBoundary } from 'expo-router';
+
+// expo-router's initial deep-link resolver can call setState on a component
+// that unmounted during the first navigation, emitting a benign dev-only
+// warning. Suppress just that message so it doesn't clutter the LogBox or
+// intercept taps during on-device UI automation.
+LogBox.ignoreLogs([
+  "Can't perform a React state update on a component that hasn't mounted yet",
+]);
 
 SplashScreen.preventAutoHideAsync();
 

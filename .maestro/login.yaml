@@ -1,8 +1,25 @@
 # Minimal auth flow: dev email sign-in lands on the quest feed.
+#
+# The app ships as an Expo dev client, so a bare `launchApp` lands on the dev
+# launcher rather than the app. Clear state, then deep-link straight to the
+# Metro bundler (the Android emulator reaches the host at 10.0.2.2:8081) so the
+# client connects deterministically without depending on launcher auto-detect.
 appId: com.trotnspot.quest
 ---
 - launchApp:
     clearState: true
-- assertVisible: 'Quest'
+- stopApp
+- openLink: 'quest://expo-development-client/?url=http%3A%2F%2F10.0.2.2%3A8081'
+# Deep-linking into the dev client opens its developer menu over the app;
+# wait for it (first bundle is slow) and dismiss it.
+- extendedWaitUntil:
+    visible: 'Continue'
+    timeout: 120000
+- tapOn: 'Continue'
+# Close the dev menu sheet to reveal the app underneath.
+- back
+- extendedWaitUntil:
+    visible: 'DEV LOGIN'
+    timeout: 30000
 - tapOn: 'Sign In / Sign Up'
 - assertVisible: 'Quests for You'
