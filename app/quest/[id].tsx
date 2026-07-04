@@ -7,6 +7,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useCompleteQuest } from '@/hooks/useCompleteQuest';
 import { useJourney } from '@/hooks/useJourney';
 import { QUEST_COLUMNS_NO_LOCATION } from '@/hooks/useQuests';
+import { usePackLookups } from '@/providers/AuthProvider';
 import { capturePhoto } from '@/lib/photos';
 import { notify } from '@/lib/notify';
 import { Quest } from '@/types/database';
@@ -15,6 +16,7 @@ export default function QuestDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { user } = useAuth();
+  const { memberNames } = usePackLookups();
   const { completeQuest, loading: completing, error } = useCompleteQuest();
   const { activeJourney } = useJourney();
 
@@ -69,8 +71,15 @@ export default function QuestDetailScreen() {
     fetchQuest();
   }, [id, user]);
 
-  const isAssignee = quest?.assignee_id === user?.id;
   const isActive = quest?.status === 'active';
+  // Targeted quests belong to their assignee; open quests are up for
+  // grabs by anyone in the pack except the person who spotted them.
+  const canAttempt =
+    !!quest &&
+    !!user &&
+    (quest.mode === 'targeted'
+      ? quest.assignee_id === user.id
+      : quest.creator_id !== user.id);
 
   const handleFoundIt = async () => {
     const uri = await capturePhoto();
@@ -124,6 +133,14 @@ export default function QuestDetailScreen() {
         )}
 
         <Text style={styles.meta}>
+          {quest.mode === 'open'
+            ? `${memberNames[quest.creator_id] ?? 'A packmate'} spotted this — open to the pack, first to find it wins`
+            : quest.assignee_id === user?.id
+              ? `${memberNames[quest.creator_id] ?? 'A packmate'} left this for you`
+              : `${memberNames[quest.creator_id] ?? 'A packmate'} left this for ${quest.assignee_id ? memberNames[quest.assignee_id] ?? 'a packmate' : 'the pack'}`}
+        </Text>
+
+        <Text style={styles.meta}>
           Created {new Date(quest.created_at).toLocaleDateString()}
         </Text>
 
@@ -135,7 +152,11 @@ export default function QuestDetailScreen() {
 
         {quest.status === 'completed' && completionPhotoUrl && (
           <>
-            <Text style={styles.sectionLabel}>Found!</Text>
+            <Text style={styles.sectionLabel}>
+              {quest.finder_id
+                ? `Found by ${quest.finder_id === user?.id ? 'you' : memberNames[quest.finder_id] ?? 'a packmate'}!`
+                : 'Found!'}
+            </Text>
             <Image source={{ uri: completionPhotoUrl }} style={styles.mainPhoto} />
             {quest.completed_at && (
               <Text style={styles.meta}>
@@ -145,8 +166,8 @@ export default function QuestDetailScreen() {
           </>
         )}
 
-        {/* Completion flow for assignee */}
-        {isAssignee && isActive && !capturedUri && (
+        {/* Completion flow for whoever may attempt this quest */}
+        {canAttempt && isActive && !capturedUri && (
           <TouchableOpacity style={styles.foundButton} onPress={handleFoundIt}>
             <Text style={styles.foundButtonText}>I Found It!</Text>
           </TouchableOpacity>

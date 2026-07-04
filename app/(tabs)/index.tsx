@@ -6,12 +6,13 @@ import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
 import { useQuests } from '@/hooks/useQuests';
 import { useSync } from '@/providers/SyncProvider';
+import { useAuth, usePackLookups } from '@/providers/AuthProvider';
 import { Quest } from '@/types/database';
 import { supabase } from '@/lib/supabase';
 import { getTimeAgo } from '@/lib/format';
 import { useState, useEffect } from 'react';
 
-function QuestCard({ quest }: { quest: Quest }) {
+function QuestCard({ quest, subtitle }: { quest: Quest; subtitle?: string }) {
   const router = useRouter();
   const c = Colors[useColorScheme() ?? 'light'];
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
@@ -43,15 +44,29 @@ function QuestCard({ quest }: { quest: Quest }) {
         <Text style={styles.cardDescription}>
           {quest.description || 'Find this!'}
         </Text>
-        <Text style={styles.cardMeta}>{timeAgo}</Text>
+        <Text style={styles.cardMeta}>
+          {subtitle ? `${subtitle} · ${timeAgo}` : timeAgo}
+        </Text>
       </View>
     </TouchableOpacity>
   );
 }
 
 export default function FeedScreen() {
-  const { activeQuestsForMe, activeQuestsByMe, loading, refresh } = useQuests();
+  const { forMe, openForPack, byMe, aroundMyPacks, loading, refresh } = useQuests();
   const { pendingCount } = useSync();
+  const { packs } = useAuth();
+  const { memberNames, packNames } = usePackLookups();
+
+  const showPackLabels = packs.length > 1;
+  const packLabel = (q: Quest) => (showPackLabels ? packNames[q.pack_id] : undefined);
+  const nameOf = (id: string | null) => (id ? memberNames[id] ?? 'a packmate' : '');
+
+  const withPack = (base: string | undefined, q: Quest) => {
+    const label = packLabel(q);
+    if (base && label) return `${base} · ${label}`;
+    return base ?? label;
+  };
 
   // Tab screens stay mounted, so refetch whenever the feed regains
   // focus (e.g. right after creating a quest on the Create tab).
@@ -78,21 +93,55 @@ export default function FeedScreen() {
             </View>
           )}
           <Text style={styles.sectionTitle}>Quests for You</Text>
-          {activeQuestsForMe.length === 0 ? (
+          {forMe.length === 0 ? (
             <Text style={styles.emptyText}>
-              No quests yet! Ask your partner to create one.
+              Nothing yet — your packmates are still out spotting.
             </Text>
           ) : (
-            activeQuestsForMe.map((q) => <QuestCard key={q.id} quest={q} />)
+            forMe.map((q) => (
+              <QuestCard key={q.id} quest={q} subtitle={withPack(`From ${nameOf(q.creator_id)}`, q)} />
+            ))
+          )}
+
+          {openForPack.length > 0 && (
+            <>
+              <Text style={styles.sectionTitle}>Open to the Pack</Text>
+              {openForPack.map((q) => (
+                <QuestCard
+                  key={q.id}
+                  quest={q}
+                  subtitle={withPack(`${nameOf(q.creator_id)} spotted this — first to find it wins`, q)}
+                />
+              ))}
+            </>
           )}
 
           <Text style={styles.sectionTitle}>Quests by You</Text>
-          {activeQuestsByMe.length === 0 ? (
+          {byMe.length === 0 ? (
             <Text style={styles.emptyText}>
-              Create a quest for your partner!
+              Create a quest for your pack!
             </Text>
           ) : (
-            activeQuestsByMe.map((q) => <QuestCard key={q.id} quest={q} />)
+            byMe.map((q) => (
+              <QuestCard
+                key={q.id}
+                quest={q}
+                subtitle={withPack(q.mode === 'open' ? 'Open to the pack' : `For ${nameOf(q.assignee_id)}`, q)}
+              />
+            ))
+          )}
+
+          {aroundMyPacks.length > 0 && (
+            <>
+              <Text style={styles.sectionTitle}>Around Your Packs</Text>
+              {aroundMyPacks.map((q) => (
+                <QuestCard
+                  key={q.id}
+                  quest={q}
+                  subtitle={withPack(`${nameOf(q.creator_id)} left one for ${nameOf(q.assignee_id)}`, q)}
+                />
+              ))}
+            </>
           )}
         </>
       }

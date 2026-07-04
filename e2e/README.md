@@ -20,8 +20,10 @@ scripts/db-test.sh        # PGHOST/PGPORT/PGUSER env-overridable
 Creates a throwaway `quest_test` database, applies
 `supabase/tests/supabase-shim.sql` (a stand-in for the Supabase-managed
 auth/storage schemas), all migrations, and seed data, then runs
-`supabase/tests/db-tests.sql`: RLS isolation, pair_with_partner,
-complete_quest, storage folder policies, and push-trigger resilience.
+`supabase/tests/db-tests.sql`: RLS isolation (between packs and from
+strangers), pack lifecycle (create/join/leave/remove/invite rotation),
+complete_quest in both modes (targeted assignee rules, open-quest race),
+storage folder policies, and push-trigger resilience.
 
 ## 3. Browser E2E (anywhere with Chromium)
 
@@ -34,7 +36,7 @@ API (auth password grant, PostgREST subset, storage upload/signed URLs)
 that executes every data operation against the real Postgres **as the
 authenticated role with RLS active** — plus Expo web, then drives the
 real UI in Chromium through the full two-user story: sign in → walk →
-create quest with photo → location visible to creator only → partner
+create quest with photo → location visible to creator only → packmate
 completes with photo → history with time-to-find. Screenshots land in
 `e2e/screenshots/`.
 

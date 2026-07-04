@@ -1,4 +1,5 @@
 import { StyleSheet, TouchableOpacity, Image } from 'react-native';
+import { useRouter } from 'expo-router';
 import { Text, View } from '@/components/Themed';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
@@ -8,8 +9,9 @@ import { confirm } from '@/lib/notify';
 import { formatTimer } from '@/lib/format';
 
 export default function ProfileScreen() {
-  const { profile, partner, signOut } = useAuth();
+  const { profile, packs, signOut } = useAuth();
   const { activeJourney, startJourney, endJourney, journeyDuration } = useJourney();
+  const router = useRouter();
   const c = Colors[useColorScheme() ?? 'light'];
 
   const handleSignOut = () => {
@@ -23,11 +25,14 @@ export default function ProfileScreen() {
           <Image source={{ uri: profile.avatar_url }} style={styles.avatar} />
         )}
         <Text style={styles.name}>{profile?.display_name ?? 'User'}</Text>
-        {partner && (
-          <Text style={styles.partnerText}>
-            Paired with {partner.display_name}
+        {packs.map((pack) => (
+          <Text key={pack.id} style={styles.partnerText}>
+            {pack.name} · {pack.members.length} {pack.members.length === 1 ? 'member' : 'members'}
           </Text>
-        )}
+        ))}
+        <TouchableOpacity onPress={() => router.push('/(auth)/packs')}>
+          <Text style={styles.managePacksText}>Manage Packs</Text>
+        </TouchableOpacity>
       </View>
 
       <View style={[styles.journeySection, { backgroundColor: c.card }]}>
@@ -76,6 +81,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#999',
     marginTop: 4,
+  },
+  managePacksText: {
+    color: '#4285F4',
+    fontSize: 14,
+    fontWeight: '600',
+    marginTop: 10,
   },
   journeySection: {
     alignItems: 'center',

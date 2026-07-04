@@ -43,6 +43,22 @@ diverged from the plan:
   mock Supabase API backed by real Postgres RLS, and Maestro dev-client
   flows for on-device smoke tests.
 
+- **Packs replaced 1:1 pairing** (July 2026, after the MVP). The
+  `profiles.partner_id`/`pair_code` model is gone (migration 010): users now
+  belong to **packs** — small invite-only groups, multiple per user — and every
+  quest belongs to a pack. Quests come in two modes: `targeted` (one assignee,
+  the original behavior) or `open` (no assignee; any packmate may complete it,
+  first write wins — losers see "Already found by {name}"). All pack quests are
+  visible pack-wide as teasers (photo + description, never location); the mode
+  only controls who may complete. Membership mutations go through SECURITY
+  DEFINER RPCs (`create_pack`, `join_pack`, `leave_pack`, `remove_pack_member`,
+  `regenerate_pack_invite`); reads are RLS-scoped to active members. Existing
+  couples were auto-migrated into two-person packs. Reserved-but-inert columns
+  (`packs.visibility`, `pack_members.status`, invite `expires_at`/`max_uses`)
+  leave room for cross-pack/neighborhood features without another migration.
+  Open-quest creation/completion is deliberately feed-only (no push) so bigger
+  packs don't get noisy; targeted quests keep their push moments.
+
 Remaining (not blocking daily use): Google Sign-In setup, push `app_config`
 rows + edge function deploy on the hosted project, end-to-end push
 verification on physical devices.

@@ -25,7 +25,7 @@ LogBox.ignoreLogs([
 SplashScreen.preventAutoHideAsync();
 
 function AuthGate() {
-  const { session, loading, profile } = useAuth();
+  const { session, loading, packs, packsReady } = useAuth();
   const segments = useSegments();
   const router = useRouter();
 
@@ -33,17 +33,22 @@ function AuthGate() {
     if (loading) return;
 
     const firstSegment = segments[0];
+    const secondSegment = (segments as string[])[1] as string | undefined;
     const inAuthGroup = firstSegment === '(auth)';
 
     if (!session) {
       if (!inAuthGroup) router.replace('/(auth)/login');
-    } else if (!profile?.partner_id) {
-      const secondSegment = (segments as string[])[1] as string | undefined;
-      if (secondSegment !== 'pair') router.replace('/(auth)/pair');
+    } else if (!packsReady) {
+      // Hold position until the packs fetch answers — routing on the
+      // empty initial state would flash the onboarding screen.
+    } else if (packs.length === 0) {
+      if (secondSegment !== 'packs') router.replace('/(auth)/packs');
     } else {
-      if (inAuthGroup) router.replace('/(tabs)');
+      // The packs screen stays reachable (create/join/manage) even
+      // once you have packs; everything else in (auth) bounces home.
+      if (inAuthGroup && secondSegment !== 'packs') router.replace('/(tabs)');
     }
-  }, [session, loading, profile, segments]);
+  }, [session, loading, packs, packsReady, segments]);
 
   return <Slot />;
 }

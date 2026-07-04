@@ -7,8 +7,10 @@ import { flushQueue, FlushHandlers } from '@/lib/offline';
 
 export async function syncCreateQuest(payload: {
   questId: string;
+  packId: string;
   creatorId: string;
-  assigneeId: string;
+  assigneeId: string | null;
+  mode: 'targeted' | 'open';
   journeyId: string | null;
   description: string | null;
   photoUri: string;
@@ -22,8 +24,10 @@ export async function syncCreateQuest(payload: {
 
   const { error } = await supabase.from('quests').insert({
     id: payload.questId,
+    pack_id: payload.packId,
     creator_id: payload.creatorId,
     assignee_id: payload.assigneeId,
+    mode: payload.mode,
     journey_id: payload.journeyId,
     description: payload.description,
     photo_path: photoPath,
