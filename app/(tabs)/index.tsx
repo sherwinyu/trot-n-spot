@@ -1,9 +1,12 @@
 import { StyleSheet, FlatList, TouchableOpacity, Image, RefreshControl } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
+import { useCallback } from 'react';
 import { Text, View } from '@/components/Themed';
 import { useQuests } from '@/hooks/useQuests';
+import { useSync } from '@/providers/SyncProvider';
 import { Quest } from '@/types/database';
 import { supabase } from '@/lib/supabase';
+import { getTimeAgo } from '@/lib/format';
 import { useState, useEffect } from 'react';
 
 function QuestCard({ quest }: { quest: Quest }) {
@@ -26,7 +29,13 @@ function QuestCard({ quest }: { quest: Quest }) {
       style={styles.card}
       onPress={() => router.push(`/quest/${quest.id}`)}
     >
-      {photoUrl && <Image source={{ uri: photoUrl }} style={styles.cardImage} />}
+      {photoUrl ? (
+        <Image source={{ uri: photoUrl }} style={styles.cardImage} />
+      ) : (
+        <View style={[styles.cardImage, styles.imagePlaceholder]}>
+          <Text style={styles.placeholderIcon}>🔍</Text>
+        </View>
+      )}
       <View style={styles.cardContent}>
         <Text style={styles.cardDescription}>
           {quest.description || 'Find this!'}
@@ -37,18 +46,17 @@ function QuestCard({ quest }: { quest: Quest }) {
   );
 }
 
-function getTimeAgo(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const minutes = Math.floor(diff / 60000);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
-}
-
 export default function FeedScreen() {
   const { activeQuestsForMe, activeQuestsByMe, loading, refresh } = useQuests();
+  const { pendingCount } = useSync();
+
+  // Tab screens stay mounted, so refetch whenever the feed regains
+  // focus (e.g. right after creating a quest on the Create tab).
+  useFocusEffect(
+    useCallback(() => {
+      refresh();
+    }, [refresh])
+  );
 
   return (
     <FlatList
@@ -59,6 +67,13 @@ export default function FeedScreen() {
       renderItem={null}
       ListHeaderComponent={
         <>
+          {pendingCount > 0 && (
+            <View style={styles.syncBanner}>
+              <Text style={styles.syncBannerText}>
+                {pendingCount} {pendingCount === 1 ? 'quest' : 'quests'} waiting to sync — will send when back online
+              </Text>
+            </View>
+          )}
           <Text style={styles.sectionTitle}>Quests for You</Text>
           {activeQuestsForMe.length === 0 ? (
             <Text style={styles.emptyText}>
@@ -121,5 +136,23 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#999',
     marginTop: 4,
+  },
+  imagePlaceholder: {
+    backgroundColor: '#e8e8e8',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  placeholderIcon: {
+    fontSize: 28,
+  },
+  syncBanner: {
+    backgroundColor: '#FFF3CD',
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 8,
+  },
+  syncBannerText: {
+    color: '#856404',
+    fontSize: 13,
   },
 });

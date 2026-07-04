@@ -1,9 +1,10 @@
-import { StyleSheet, TouchableOpacity, TextInput, Image, ActivityIndicator, Alert } from 'react-native';
+import { StyleSheet, TouchableOpacity, TextInput, Image, ActivityIndicator } from 'react-native';
 import { useState } from 'react';
-import * as ImagePicker from 'expo-image-picker';
 import { Text, View } from '@/components/Themed';
 import { useCreateQuest } from '@/hooks/useCreateQuest';
 import { useJourney } from '@/hooks/useJourney';
+import { capturePhoto } from '@/lib/photos';
+import { notify } from '@/lib/notify';
 
 export default function CreateScreen() {
   const { createQuest, loading, error } = useCreateQuest();
@@ -12,30 +13,29 @@ export default function CreateScreen() {
   const [description, setDescription] = useState('');
 
   const pickPhoto = async () => {
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ['images'],
-      quality: 1,
-    });
-
-    if (!result.canceled && result.assets[0]) {
-      setPhotoUri(result.assets[0].uri);
-    }
+    const uri = await capturePhoto();
+    if (uri) setPhotoUri(uri);
   };
 
   const handleSend = async () => {
     if (!photoUri) {
-      Alert.alert('Photo required', 'Take a photo of something for your partner to find!');
+      notify('Photo required', 'Take a photo of something for your partner to find!');
       return;
     }
 
-    const quest = await createQuest({
+    const result = await createQuest({
       photoUri,
       description: description.trim() || undefined,
       journeyId: activeJourney?.id,
     });
 
-    if (quest) {
-      Alert.alert('Quest sent!', 'Your partner has a new quest to find.');
+    if (result) {
+      notify(
+        'Quest sent!',
+        result.queued
+          ? "You're offline — it will send when you're back online."
+          : 'Your partner has a new quest to find.'
+      );
       setPhotoUri(null);
       setDescription('');
     }

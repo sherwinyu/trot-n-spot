@@ -1,23 +1,16 @@
-import { StyleSheet, TouchableOpacity, Image, Alert } from 'react-native';
+import { StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { Text, View } from '@/components/Themed';
 import { useAuth } from '@/hooks/useAuth';
 import { useJourney } from '@/hooks/useJourney';
-
-function formatTimer(seconds: number): string {
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  return `${m}:${s.toString().padStart(2, '0')}`;
-}
+import { confirm } from '@/lib/notify';
+import { formatTimer } from '@/lib/format';
 
 export default function ProfileScreen() {
   const { profile, partner, signOut } = useAuth();
   const { activeJourney, startJourney, endJourney, journeyDuration } = useJourney();
 
   const handleSignOut = () => {
-    Alert.alert('Sign Out', 'Are you sure?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Sign Out', style: 'destructive', onPress: signOut },
-    ]);
+    confirm('Sign Out', 'Are you sure?', signOut, 'Sign Out');
   };
 
   return (

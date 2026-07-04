@@ -1,8 +1,9 @@
-import { StyleSheet, TouchableOpacity, TextInput, Alert, Share, ActivityIndicator } from 'react-native';
+import { StyleSheet, TouchableOpacity, TextInput, Share, ActivityIndicator } from 'react-native';
 import { useState } from 'react';
 import { Text, View } from '@/components/Themed';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
+import { notify } from '@/lib/notify';
 
 export default function PairScreen() {
   const { profile, refreshProfile } = useAuth();
@@ -11,7 +12,7 @@ export default function PairScreen() {
 
   const handlePair = async () => {
     if (!code.trim()) {
-      Alert.alert('Error', 'Please enter a pair code');
+      notify('Error', 'Please enter a pair code');
       return;
     }
 
@@ -23,14 +24,14 @@ export default function PairScreen() {
 
       if (error) throw error;
       if (data?.error) {
-        Alert.alert('Error', data.error);
+        notify('Error', data.error);
         return;
       }
 
-      Alert.alert('Paired!', `You're now paired with ${data.partner_name}`);
+      notify('Paired!', `You're now paired with ${data.partner_name}`);
       await refreshProfile();
     } catch (err: any) {
-      Alert.alert('Error', err.message ?? 'Failed to pair');
+      notify('Error', err.message ?? 'Failed to pair');
     } finally {
       setLoading(false);
     }

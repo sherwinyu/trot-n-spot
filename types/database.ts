@@ -1,3 +1,8 @@
+// Quests assigned to me never include location — that's the hunt.
+// Used everywhere a quest is fetched on behalf of a possible assignee.
+export const QUEST_COLUMNS_NO_LOCATION =
+  'id, creator_id, assignee_id, journey_id, status, description, photo_path, completion_photo_path, completion_journey_id, completed_at, created_at, updated_at';
+
 export type Profile = {
   id: string;
   display_name: string;

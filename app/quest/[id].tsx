@@ -1,12 +1,14 @@
-import { StyleSheet, TouchableOpacity, Image, ActivityIndicator, Alert, ScrollView } from 'react-native';
+import { StyleSheet, TouchableOpacity, Image, ActivityIndicator, ScrollView } from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { useState, useEffect } from 'react';
-import * as ImagePicker from 'expo-image-picker';
 import { Text, View } from '@/components/Themed';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import { useCompleteQuest } from '@/hooks/useCompleteQuest';
 import { useJourney } from '@/hooks/useJourney';
+import { QUEST_COLUMNS_NO_LOCATION } from '@/hooks/useQuests';
+import { capturePhoto } from '@/lib/photos';
+import { notify } from '@/lib/notify';
 import { Quest } from '@/types/database';
 
 export default function QuestDetailScreen() {
@@ -17,6 +19,7 @@ export default function QuestDetailScreen() {
   const { activeJourney } = useJourney();
 
   const [quest, setQuest] = useState<Quest | null>(null);
+  const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [completionPhotoUrl, setCompletionPhotoUrl] = useState<string | null>(null);
@@ -24,44 +27,54 @@ export default function QuestDetailScreen() {
 
   useEffect(() => {
     async function fetchQuest() {
+      // Never pull location with the quest itself — the assignee's
+      // device shouldn't receive coordinates for an active hunt.
       const { data } = await supabase
         .from('quests')
-        .select('*')
+        .select(QUEST_COLUMNS_NO_LOCATION)
         .eq('id', id)
         .single();
 
       if (data) {
-        setQuest(data as Quest);
+        const q = data as unknown as Quest;
+        setQuest(q);
+
+        // Location is only for the creator, or for both after
+        // completion (the fun reveal of where it was spotted).
+        if (user && (q.creator_id === user.id || q.status === 'completed')) {
+          const { data: loc } = await supabase
+            .from('quests')
+            .select('location_lat, location_lng')
+            .eq('id', id)
+            .single();
+          if (loc?.location_lat != null && loc?.location_lng != null) {
+            setLocation({ lat: loc.location_lat, lng: loc.location_lng });
+          }
+        }
 
         const { data: signed } = await supabase.storage
           .from('quest-photos')
-          .createSignedUrl(data.photo_path, 3600);
+          .createSignedUrl(q.photo_path, 3600);
         if (signed) setPhotoUrl(signed.signedUrl);
 
-        if (data.completion_photo_path) {
+        if (q.completion_photo_path) {
           const { data: compSigned } = await supabase.storage
             .from('quest-photos')
-            .createSignedUrl(data.completion_photo_path, 3600);
+            .createSignedUrl(q.completion_photo_path, 3600);
           if (compSigned) setCompletionPhotoUrl(compSigned.signedUrl);
         }
       }
       setLoading(false);
     }
     fetchQuest();
-  }, [id]);
+  }, [id, user]);
 
   const isAssignee = quest?.assignee_id === user?.id;
   const isActive = quest?.status === 'active';
 
   const handleFoundIt = async () => {
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ['images'],
-      quality: 1,
-    });
-
-    if (!result.canceled && result.assets[0]) {
-      setCapturedUri(result.assets[0].uri);
-    }
+    const uri = await capturePhoto();
+    if (uri) setCapturedUri(uri);
   };
 
   const handleConfirmCompletion = async () => {
@@ -74,9 +87,11 @@ export default function QuestDetailScreen() {
     });
 
     if (result) {
-      Alert.alert('Quest Complete!', 'Nice find!', [
-        { text: 'OK', onPress: () => router.back() },
-      ]);
+      notify(
+        'Quest Complete!',
+        result.queued ? "Nice find! It will sync when you're back online." : 'Nice find!',
+        () => router.back()
+      );
     }
   };
 
@@ -111,6 +126,12 @@ export default function QuestDetailScreen() {
         <Text style={styles.meta}>
           Created {new Date(quest.created_at).toLocaleDateString()}
         </Text>
+
+        {location && (
+          <Text style={styles.meta}>
+            📍 Spotted at {location.lat.toFixed(5)}, {location.lng.toFixed(5)}
+          </Text>
+        )}
 
         {quest.status === 'completed' && completionPhotoUrl && (
           <>

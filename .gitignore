@@ -51,3 +51,7 @@ build-output/
 
 # environment
 .env
+
+# e2e artifacts
+e2e/screenshots/
+e2e/.storage/

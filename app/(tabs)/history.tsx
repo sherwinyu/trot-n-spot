@@ -1,9 +1,11 @@
 import { StyleSheet, FlatList, TouchableOpacity, Image, RefreshControl } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
+import { useCallback } from 'react';
 import { Text, View } from '@/components/Themed';
 import { useQuests } from '@/hooks/useQuests';
 import { Quest } from '@/types/database';
 import { supabase } from '@/lib/supabase';
+import { formatDuration } from '@/lib/format';
 import { useState, useEffect } from 'react';
 
 function HistoryCard({ quest }: { quest: Quest }) {
@@ -39,8 +41,20 @@ function HistoryCard({ quest }: { quest: Quest }) {
       onPress={() => router.push(`/quest/${quest.id}`)}
     >
       <View style={styles.photos}>
-        {originalUrl && <Image source={{ uri: originalUrl }} style={styles.photo} />}
-        {completionUrl && <Image source={{ uri: completionUrl }} style={styles.photo} />}
+        {originalUrl ? (
+          <Image source={{ uri: originalUrl }} style={styles.photo} />
+        ) : (
+          <View style={[styles.photo, styles.photoPlaceholder]}>
+            <Text style={styles.placeholderIcon}>🔍</Text>
+          </View>
+        )}
+        {completionUrl ? (
+          <Image source={{ uri: completionUrl }} style={styles.photo} />
+        ) : (
+          <View style={[styles.photo, styles.photoPlaceholder]}>
+            <Text style={styles.placeholderIcon}>✅</Text>
+          </View>
+        )}
       </View>
       <View style={styles.cardInfo}>
         <Text style={styles.cardDescription}>
@@ -52,17 +66,15 @@ function HistoryCard({ quest }: { quest: Quest }) {
   );
 }
 
-function formatDuration(ms: number): string {
-  const minutes = Math.floor(ms / 60000);
-  if (minutes < 60) return `${minutes} min`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours} hours`;
-  const days = Math.floor(hours / 24);
-  return `${days} days`;
-}
-
 export default function HistoryScreen() {
   const { completedQuests, loading, refresh } = useQuests();
+
+  // Refetch when the tab regains focus so fresh completions show up.
+  useFocusEffect(
+    useCallback(() => {
+      refresh();
+    }, [refresh])
+  );
 
   return (
     <FlatList
@@ -98,6 +110,14 @@ const styles = StyleSheet.create({
   photo: {
     flex: 1,
     height: 120,
+  },
+  photoPlaceholder: {
+    backgroundColor: '#e8e8e8',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  placeholderIcon: {
+    fontSize: 28,
   },
   cardInfo: {
     padding: 12,
