@@ -1,7 +1,8 @@
 import { QUEST_COLUMNS_NO_LOCATION } from '../../types/database';
 
-// Location privacy: the column list used for quests assigned to the
-// current user (and for the detail fetch) must never include GPS fields.
+// Location privacy: the column list used for quest lists and the
+// detail fetch must never include GPS fields — for anyone, in either
+// mode, until completion reveals them.
 describe('QUEST_COLUMNS_NO_LOCATION', () => {
   it('excludes location columns', () => {
     expect(QUEST_COLUMNS_NO_LOCATION).not.toContain('location_lat');
@@ -12,8 +13,11 @@ describe('QUEST_COLUMNS_NO_LOCATION', () => {
   it('includes everything the feed and detail screens render', () => {
     for (const col of [
       'id',
+      'pack_id',
       'creator_id',
       'assignee_id',
+      'finder_id',
+      'mode',
       'status',
       'description',
       'photo_path',

@@ -15,7 +15,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 type QuestRecord = {
   id: string;
   creator_id: string;
-  assignee_id: string;
+  assignee_id: string | null; // null = open to the pack (feed-only, no push)
   status: string;
   description: string | null;
 };
@@ -37,9 +37,11 @@ Deno.serve(async (req) => {
   let body = '';
 
   if (type === 'INSERT') {
+    // Open quests (no assignee) are deliberately feed-only — pushing
+    // the whole pack on every spot would get noisy as packs grow.
     recipientId = record.assignee_id;
     title = 'New Quest!';
-    body = record.description || 'Your partner spotted something for you to find';
+    body = record.description || 'A packmate spotted something for you to find';
   } else if (
     type === 'UPDATE' &&
     record.status === 'completed' &&
@@ -47,7 +49,7 @@ Deno.serve(async (req) => {
   ) {
     recipientId = record.creator_id;
     title = 'Quest Completed!';
-    body = 'Your partner found it!';
+    body = 'Your quest was found!';
   }
 
   if (!recipientId) {

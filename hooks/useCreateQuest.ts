@@ -8,7 +8,7 @@ import { enqueue, isNetworkError } from '@/lib/offline';
 import { Quest } from '@/types/database';
 
 export function useCreateQuest() {
-  const { user, partner } = useAuth();
+  const { user, packs } = useAuth();
   const { refreshPendingCount } = useSync();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -17,15 +17,29 @@ export function useCreateQuest() {
     photoUri,
     description,
     journeyId,
+    packId,
+    assigneeId,
   }: {
     photoUri: string;
     description?: string;
     journeyId?: string;
+    packId: string;
+    assigneeId: string | null; // a packmate for targeted, null for open-to-the-pack
   }): Promise<{ quest: Quest; queued: boolean } | null> => {
-    if (!user || !partner) {
-      setError('Must be signed in and paired');
+    if (!user) {
+      setError('Must be signed in');
       return null;
     }
+    const pack = packs.find((p) => p.id === packId);
+    if (!pack) {
+      setError('Pick a pack for this quest');
+      return null;
+    }
+    if (assigneeId && !pack.members.some((m) => m.user_id === assigneeId)) {
+      setError('That person is not in this pack');
+      return null;
+    }
+    const mode: 'targeted' | 'open' = assigneeId ? 'targeted' : 'open';
 
     setLoading(true);
     setError(null);
@@ -39,8 +53,10 @@ export function useCreateQuest() {
 
       const payload = {
         questId,
+        packId,
         creatorId: user.id,
-        assigneeId: partner.id,
+        assigneeId,
+        mode,
         journeyId: journeyId ?? null,
         description: description?.trim() || null,
         photoUri,
@@ -51,8 +67,11 @@ export function useCreateQuest() {
 
       const quest: Quest = {
         id: questId,
+        pack_id: packId,
         creator_id: user.id,
-        assignee_id: partner.id,
+        assignee_id: assigneeId,
+        finder_id: null,
+        mode,
         journey_id: payload.journeyId,
         status: 'active',
         description: payload.description,
@@ -81,7 +100,7 @@ export function useCreateQuest() {
     } finally {
       setLoading(false);
     }
-  }, [user, partner, refreshPendingCount]);
+  }, [user, packs, refreshPendingCount]);
 
   return { createQuest, loading, error };
 }

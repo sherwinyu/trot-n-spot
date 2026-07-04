@@ -56,8 +56,10 @@ adb exec-out screencap -p > screen.png   # Screenshot
 
 - All routes live in `/app` (Expo Router file-based routing)
 - Business logic in `/hooks` and `/lib`, not in components
+- Quests are pack-scoped: every quest has a `pack_id` and a `mode` — `targeted` (one assignee) or `open` (any packmate, first to complete wins). Users can belong to multiple packs; membership changes only via the pack RPCs (`create_pack`/`join_pack`/`leave_pack`/`remove_pack_member`), never direct table writes
+- Completion only via the `complete_quest` RPC — it enforces mode rules and makes the open-quest race atomic (there is no direct-update RLS path)
 - Reads go through Supabase with a cached last-good copy (`useQuests`); offline writes queue in `lib/offline.ts` and replay via `SyncProvider`
-- Location fields are NEVER exposed to quest assignees — always select `QUEST_COLUMNS_NO_LOCATION` (types/database.ts) when fetching quests an assignee can see; location is fetched separately only for the creator or after completion
+- Location fields are NEVER exposed to quest finders — always select `QUEST_COLUMNS_NO_LOCATION` (types/database.ts) for any list or detail fetch; location is fetched separately only for the creator or after completion
 - Photos compressed to max 1200px width, 80% JPEG quality before upload (`lib/photos.ts`)
 - Photo upload on native must go through FormData with the file URI (`lib/photos.ts`) — RN's `fetch()` cannot read `file://` URIs on Android
 - Use client-side UUIDs for offline-first record creation

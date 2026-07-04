@@ -23,7 +23,11 @@ const ROOT = path.join(__dirname, '..');
 const SHOTS = process.env.E2E_SHOTS_DIR || path.join(__dirname, 'screenshots');
 const APP_URL = 'http://127.0.0.1:8081';
 const MOCK_URL = 'http://127.0.0.1:54321';
-const PG = { PGHOST: '127.0.0.1', PGPORT: '54322', PGUSER: 'postgres' };
+const PG = {
+  PGHOST: process.env.PGHOST || '127.0.0.1',
+  PGPORT: process.env.PGPORT || '54322',
+  PGUSER: process.env.PGUSER || 'postgres',
+};
 
 // 1x1 transparent PNG — plenty for the picker + manipulator pipeline.
 const TEST_IMAGE = Buffer.from(

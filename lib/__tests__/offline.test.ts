@@ -14,8 +14,10 @@ const createMutation = (id: string): PendingMutation => ({
   type: 'create_quest',
   payload: {
     questId: id,
+    packId: 'pack-1',
     creatorId: 'user-a',
     assigneeId: 'user-b',
+    mode: 'targeted',
     journeyId: null,
     description: 'test quest',
     photoUri: 'file:///photo.jpg',

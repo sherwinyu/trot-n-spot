@@ -135,6 +135,14 @@ function buildWhere(params, args) {
       if (op === 'eq') {
         args.push(operand);
         clauses.push(`${quoteIdent(key)} = $${args.length}`);
+      } else if (op === 'in') {
+        // in.(a,b,c)
+        const list = operand
+          .replace(/^\(|\)$/g, '')
+          .split(',')
+          .map((s) => s.trim().replace(/^"|"$/g, ''));
+        args.push(list);
+        clauses.push(`${quoteIdent(key)} = any($${args.length})`);
       } else if (op === 'is' && operand === 'null') {
         clauses.push(`${quoteIdent(key)} is null`);
       } else {
@@ -145,13 +153,81 @@ function buildWhere(params, args) {
   return clauses.length ? `where ${clauses.join(' and ')}` : '';
 }
 
+// PostgREST embedded resources, limited to the FK relationships the
+// app actually queries (packs with rosters/invites, members' profiles).
+// Embedded subqueries run in the same RLS-scoped transaction.
+const EMBED_REL = {
+  packs: {
+    pack_members: { fk: 'pack_id', many: true },
+    pack_invites: { fk: 'pack_id', many: true },
+  },
+  pack_members: {
+    profiles: { local: 'user_id', many: false },
+  },
+};
+
+function splitTopLevel(str) {
+  const parts = [];
+  let depth = 0;
+  let cur = '';
+  for (const ch of str) {
+    if (ch === '(') depth++;
+    if (ch === ')') depth--;
+    if (ch === ',' && depth === 0) {
+      parts.push(cur.trim());
+      cur = '';
+      continue;
+    }
+    cur += ch;
+  }
+  if (cur.trim()) parts.push(cur.trim());
+  return parts;
+}
+
+function parseSelect(sel) {
+  const cols = [];
+  const embeds = [];
+  for (const part of splitTopLevel(sel || '*')) {
+    const m = part.match(/^(?:([a-z_]+):)?([a-z_]+)\((.*)\)$/s);
+    if (m) embeds.push({ alias: m[1] || m[2], table: m[2], inner: m[3] });
+    else cols.push(part);
+  }
+  return { cols, embeds };
+}
+
+let embedAlias = 0;
+function selectListSql(table, sel) {
+  const { cols, embeds } = parseSelect(sel);
+  const items = cols.map((c) =>
+    c === '*' ? `${quoteIdent(table)}.*` : `${quoteIdent(table)}.${quoteIdent(c)}`
+  );
+  for (const e of embeds) {
+    const rel = (EMBED_REL[table] || {})[e.table];
+    if (!rel) throw new Error(`unsupported embed: ${table} -> ${e.table}`);
+    const a = `emb${embedAlias++}`;
+    const innerList = selectListSql(e.table, e.inner);
+    if (rel.many) {
+      items.push(
+        `(select coalesce(json_agg(row_to_json(${a})), '[]'::json) ` +
+          `from (select ${innerList} from ${quoteIdent(e.table)} ` +
+          `where ${quoteIdent(e.table)}.${quoteIdent(rel.fk)} = ${quoteIdent(table)}.id) ${a}) ` +
+          `as ${quoteIdent(e.alias)}`
+      );
+    } else {
+      items.push(
+        `(select row_to_json(${a}) ` +
+          `from (select ${innerList} from ${quoteIdent(e.table)} ` +
+          `where ${quoteIdent(e.table)}.id = ${quoteIdent(table)}.${quoteIdent(rel.local)}) ${a}) ` +
+          `as ${quoteIdent(e.alias)}`
+      );
+    }
+  }
+  return items.join(', ');
+}
+
 function buildSelect(table, params) {
   const args = [];
-  const select = (params.get('select') || '*')
-    .split(',')
-    .map((c) => c.trim())
-    .map((c) => (c === '*' ? '*' : quoteIdent(c)))
-    .join(', ');
+  const select = selectListSql(table, params.get('select') || '*');
   let sql = `select ${select} from ${quoteIdent(table)} ${buildWhere(params, args)}`;
   if (params.get('order')) {
     const [col, dir] = params.get('order').split('.');

@@ -12,8 +12,10 @@ export type PendingMutation =
       type: 'create_quest';
       payload: {
         questId: string;
+        packId: string;
         creatorId: string;
-        assigneeId: string;
+        assigneeId: string | null; // null = open to the pack
+        mode: 'targeted' | 'open';
         journeyId: string | null;
         description: string | null;
         photoUri: string; // local file URI, uploaded on flush

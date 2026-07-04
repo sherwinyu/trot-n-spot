@@ -9,8 +9,8 @@ create or replace function test_login(user_id uuid) returns void as $$
 $$ language sql volatile;
 
 -- ============ fixtures ============
--- Seeded users: a = Sherwin, b = Nadia (paired). Add two fresh users
--- for pairing tests and one stranger for RLS tests.
+-- Seeded users: a = Sherwin, b = Nadia (share a pack). Add two fresh
+-- users for pack lifecycle tests and one stranger for RLS tests.
 insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at, raw_user_meta_data, created_at, updated_at, confirmation_token, email_change, email_change_token_new, recovery_token)
 values
   ('00000000-0000-0000-0000-000000000000', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'authenticated', 'authenticated', 'test-carol@quest.dev', crypt('testpass123', gen_salt('bf')), now(), '{"full_name": "Carol"}'::jsonb, now(), now(), '', '', '', ''),
@@ -27,20 +27,34 @@ do $$
 begin
   assert (select count(*) from profiles) = 5, 'expected 5 profiles (2 seeded + 3 new)';
   assert (select display_name from profiles where id = 'cccccccc-cccc-cccc-cccc-cccccccccccc') = 'Carol', 'display_name from metadata';
-  assert (select pair_code from profiles where id = 'cccccccc-cccc-cccc-cccc-cccccccccccc') ~ '^[0-9A-F]{6}$', 'pair code generated';
-  raise notice 'PASS: handle_new_user trigger creates profiles with pair codes';
+  raise notice 'PASS: handle_new_user trigger creates profiles';
+end $$;
+
+-- ============ pair migration (010) ============
+-- The seed builds the pack directly, but the migration must also have
+-- left the seeded quests pack-scoped with finder attribution.
+do $$
+begin
+  assert (select count(*) from packs) = 1, 'one seeded pack';
+  assert (select count(*) from pack_members where pack_id = 'facadefa-cade-4ace-8ade-000000000001') = 2, 'both users in the pack';
+  assert (select count(*) from quests where pack_id is null) = 0, 'every quest belongs to a pack';
+  assert (select finder_id from quests where id = '44444444-4444-4444-4444-444444444444') = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'completed quest has finder attribution';
+  raise notice 'PASS: seeded pack + quests are pack-scoped with finders';
 end $$;
 
 -- ============ RLS as authenticated users ============
 set role authenticated;
 
--- Sherwin sees his own + partner-related quests, not more
+-- Sherwin sees his pack's quests and his packmate's profile, not more
 select test_login('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
 do $$
 begin
-  assert (select count(*) from quests) = 5, 'sherwin sees all 5 seeded quests (creator or assignee of each)';
-  assert (select count(*) from profiles) = 2, 'sherwin sees only his own and partner profiles';
-  raise notice 'PASS: participant sees own quests and own+partner profiles';
+  assert (select count(*) from quests) = 6, 'sherwin sees all 6 pack quests (incl. the open one)';
+  assert (select count(*) from profiles) = 2, 'sherwin sees only his own and packmate profiles';
+  assert (select count(*) from packs) = 1, 'sherwin sees his pack';
+  assert (select count(*) from pack_members) = 2, 'sherwin sees the pack roster';
+  assert (select code from pack_invites limit 1) = 'WOOF01', 'sherwin can read the pack invite code';
+  raise notice 'PASS: member sees pack quests, roster, invite, and packmate profiles';
 end $$;
 
 -- A stranger sees nothing
@@ -50,6 +64,8 @@ begin
   assert (select count(*) from quests) = 0, 'stranger sees no quests';
   assert (select count(*) from journeys) = 0, 'stranger sees no journeys';
   assert (select count(*) from profiles) = 1, 'stranger sees only own profile';
+  assert (select count(*) from packs) = 0, 'stranger sees no packs';
+  assert (select count(*) from pack_invites) = 0, 'stranger sees no invites';
   raise notice 'PASS: stranger is fully isolated by RLS';
 end $$;
 
@@ -64,72 +80,97 @@ begin
   raise notice 'PASS: stranger cannot modify quests';
 end $$;
 
--- Quest INSERT: only as self
+-- Quest INSERT: only as self, only into own packs
 select test_login('cccccccc-cccc-cccc-cccc-cccccccccccc');
 do $$
 begin
   begin
-    insert into quests (creator_id, assignee_id, photo_path)
-    values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'x/y/z.jpg');
+    insert into quests (pack_id, creator_id, assignee_id, photo_path)
+    values ('facadefa-cade-4ace-8ade-000000000001', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'x/y/z.jpg');
     raise exception 'should not allow inserting quest as someone else';
   exception when insufficient_privilege or check_violation then
     null; -- expected: RLS insert policy rejects
   end;
-  raise notice 'PASS: cannot create quests impersonating another creator';
+  begin
+    insert into quests (pack_id, creator_id, assignee_id, photo_path)
+    values ('facadefa-cade-4ace-8ade-000000000001', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'x/y/z.jpg');
+    raise exception 'should not allow inserting into a pack you are not in';
+  exception when insufficient_privilege or check_violation then
+    null;
+  end;
+  raise notice 'PASS: cannot create quests impersonating others or in foreign packs';
 end $$;
 
--- ============ pair_with_partner RPC ============
+-- ============ create_pack / join_pack RPCs ============
 select test_login('cccccccc-cccc-cccc-cccc-cccccccccccc');
 do $$
 declare
-  dave_code text;
+  result json;
+  carol_pack uuid;
+  carol_code text;
+begin
+  -- empty name rejected
+  result := create_pack('   ');
+  assert result ->> 'error' = 'Pack name is required', 'blank name rejected';
+
+  -- create succeeds, returns an invite code
+  result := create_pack('Dog Squad');
+  assert (result ->> 'success')::boolean, 'pack created';
+  assert result ->> 'invite_code' ~ '^[0-9A-F]{6}$', 'invite code generated';
+  carol_pack := (result ->> 'pack_id')::uuid;
+  carol_code := result ->> 'invite_code';
+
+  assert (select role from pack_members where pack_id = carol_pack and user_id = auth.uid()) = 'owner', 'creator is owner';
+
+  -- invalid code
+  result := join_pack('ZZZZZZ');
+  assert result ->> 'error' = 'Invalid invite code', 'invalid code rejected';
+
+  -- joining your own pack
+  result := join_pack(carol_code);
+  assert result ->> 'error' = 'You are already in this pack', 'rejoin rejected';
+
+  raise notice 'PASS: create_pack + join_pack validation (blank name, invalid code, rejoin)';
+end $$;
+
+-- Dave and Eve join Carol's pack via the invite code
+select test_login('dddddddd-dddd-dddd-dddd-dddddddddddd');
+do $$
+declare
+  carol_code text;
   result json;
 begin
   reset role; -- look up fixture data as superuser
-  select pair_code into dave_code from profiles where id = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
+  select code into carol_code from pack_invites pi join packs p on p.id = pi.pack_id
+    where p.name = 'Dog Squad' and pi.revoked_at is null;
   set local role authenticated;
 
-  -- invalid code
-  result := pair_with_partner('ZZZZZZ');
-  assert result ->> 'error' = 'Invalid pair code', 'invalid code rejected';
+  result := join_pack(carol_code);
+  assert (result ->> 'success')::boolean, 'dave joins';
+  assert result ->> 'pack_name' = 'Dog Squad', 'returns pack name';
 
-  -- self pair
-  result := pair_with_partner((select pair_code from profiles where id = 'cccccccc-cccc-cccc-cccc-cccccccccccc'));
-  assert result ->> 'error' = 'Cannot pair with yourself', 'self pair rejected';
-
-  -- valid pair
-  result := pair_with_partner(dave_code);
-  assert (result ->> 'success')::boolean, 'pairing succeeds';
-  assert result ->> 'partner_name' = 'Dave', 'returns partner name';
+  perform test_login('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee');
+  result := join_pack(lower(carol_code)); -- codes are case-insensitive
+  assert (result ->> 'success')::boolean, 'eve joins with lowercased code';
 
   reset role;
-  assert (select partner_id from profiles where id = 'cccccccc-cccc-cccc-cccc-cccccccccccc') = 'dddddddd-dddd-dddd-dddd-dddddddddddd', 'carol -> dave';
-  assert (select partner_id from profiles where id = 'dddddddd-dddd-dddd-dddd-dddddddddddd') = 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'dave -> carol (mutual)';
+  assert (select count(*) from pack_members pm join packs p on p.id = pm.pack_id where p.name = 'Dog Squad') = 3, 'three members';
   set local role authenticated;
 
-  -- already paired
-  result := pair_with_partner(dave_code);
-  assert result ->> 'error' = 'You are already paired with a partner', 'repairing rejected';
-
-  raise notice 'PASS: pair_with_partner (invalid, self, mutual, re-pair)';
+  raise notice 'PASS: invite codes admit new members (case-insensitive)';
 end $$;
 
--- Eve cannot pair with already-paired Dave
-select test_login('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee');
+-- Members of one pack still can't see another pack's data
+set role authenticated;
+select test_login('cccccccc-cccc-cccc-cccc-cccccccccccc');
 do $$
-declare
-  dave_code text;
-  result json;
 begin
-  reset role;
-  select pair_code into dave_code from profiles where id = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
-  set local role authenticated;
-  result := pair_with_partner(dave_code);
-  assert result ->> 'error' = 'That user is already paired', 'pairing with taken user rejected';
-  raise notice 'PASS: cannot pair with an already-paired user';
+  assert (select count(*) from quests) = 0, 'carol sees no quests from packs she is not in';
+  assert (select count(*) from packs) = 1, 'carol sees only her own pack';
+  raise notice 'PASS: pack isolation holds between packs';
 end $$;
 
--- ============ complete_quest RPC ============
+-- ============ complete_quest RPC: targeted mode ============
 -- Quest 1: creator = Nadia (b), assignee = Sherwin (a)
 
 -- Creator cannot complete own quest
@@ -139,7 +180,7 @@ declare result json;
 begin
   result := complete_quest('11111111-1111-1111-1111-111111111111', 'b/1/completion.jpg', null);
   assert result ->> 'error' = 'Only the assignee can complete this quest', 'creator blocked from completing';
-  raise notice 'PASS: only the assignee can complete a quest';
+  raise notice 'PASS: only the assignee can complete a targeted quest';
 end $$;
 
 -- Assignee completes it
@@ -150,14 +191,17 @@ begin
   result := complete_quest('11111111-1111-1111-1111-111111111111', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/11111111-1111-1111-1111-111111111111/completion.jpg', null);
   assert (result ->> 'success')::boolean, 'assignee completes quest';
 
+  reset role;
   assert (select status from quests where id = '11111111-1111-1111-1111-111111111111') = 'completed', 'status flipped';
   assert (select completed_at from quests where id = '11111111-1111-1111-1111-111111111111') is not null, 'completed_at set';
+  assert (select finder_id from quests where id = '11111111-1111-1111-1111-111111111111') = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'finder recorded';
+  set local role authenticated;
 
-  -- double completion
+  -- double completion (offline replay) stays idempotent
   result := complete_quest('11111111-1111-1111-1111-111111111111', 'x.jpg', null);
   assert result ->> 'error' = 'Quest is already completed', 'double completion rejected';
 
-  raise notice 'PASS: complete_quest (assignee success, status+timestamp, double-complete)';
+  raise notice 'PASS: complete_quest targeted (success, finder, timestamp, double-complete)';
 end $$;
 
 -- Unknown quest
@@ -167,6 +211,126 @@ begin
   result := complete_quest('99999999-9999-9999-9999-999999999999', 'x.jpg', null);
   assert result ->> 'error' = 'Quest not found', 'unknown quest error';
   raise notice 'PASS: complete_quest rejects unknown quest';
+end $$;
+
+-- ============ complete_quest RPC: open mode ============
+-- Quest 6: creator = Nadia (b), open to the pack
+
+-- Creator cannot claim their own spot
+select test_login('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
+do $$
+declare result json;
+begin
+  result := complete_quest('66666666-6666-6666-6666-666666666666', 'b/6/completion.jpg', null);
+  assert result ->> 'error' like 'You spotted this one%', 'creator blocked from open quest';
+  raise notice 'PASS: creator cannot complete their own open quest';
+end $$;
+
+-- Non-members cannot complete it
+select test_login('cccccccc-cccc-cccc-cccc-cccccccccccc');
+do $$
+declare result json;
+begin
+  result := complete_quest('66666666-6666-6666-6666-666666666666', 'c/6/completion.jpg', null);
+  assert result ->> 'error' = 'Only pack members can complete this quest', 'non-member blocked';
+  raise notice 'PASS: open quests are pack-scoped';
+end $$;
+
+-- First member to complete wins; latecomers learn who beat them
+select test_login('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+do $$
+declare result json;
+begin
+  result := complete_quest('66666666-6666-6666-6666-666666666666', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/66666666-6666-6666-6666-666666666666/completion.jpg', null);
+  assert (result ->> 'success')::boolean, 'first finder succeeds';
+
+  reset role;
+  assert (select finder_id from quests where id = '66666666-6666-6666-6666-666666666666') = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'open finder recorded';
+  set local role authenticated;
+
+  raise notice 'PASS: open quest completion records the finder';
+end $$;
+
+-- Race: Dave completes an open quest in Dog Squad, then Eve tries
+set role authenticated;
+select test_login('cccccccc-cccc-cccc-cccc-cccccccccccc');
+do $$
+declare
+  carol_pack uuid;
+  race_quest uuid;
+  result json;
+begin
+  reset role;
+  select id into carol_pack from packs where name = 'Dog Squad';
+  set local role authenticated;
+
+  insert into quests (pack_id, creator_id, assignee_id, mode, photo_path, description)
+  values (carol_pack, auth.uid(), null, 'open', 'cccccccc-cccc-cccc-cccc-cccccccccccc/race/original.jpg', 'race test')
+  returning id into race_quest;
+
+  perform test_login('dddddddd-dddd-dddd-dddd-dddddddddddd');
+  result := complete_quest(race_quest, 'dddddddd-dddd-dddd-dddd-dddddddddddd/race/completion.jpg', null);
+  assert (result ->> 'success')::boolean, 'dave wins the race';
+
+  perform test_login('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee');
+  result := complete_quest(race_quest, 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee/race/completion.jpg', null);
+  assert result ->> 'error' = 'Already found by Dave', 'loser told who won';
+
+  perform test_login('dddddddd-dddd-dddd-dddd-dddddddddddd');
+  result := complete_quest(race_quest, 'x.jpg', null);
+  assert result ->> 'error' = 'Quest is already completed', 'winner replay is idempotent';
+
+  raise notice 'PASS: open quest race (first write wins, loser sees finder name)';
+end $$;
+
+-- ============ leave / remove / invite management ============
+select test_login('cccccccc-cccc-cccc-cccc-cccccccccccc');
+do $$
+declare
+  carol_pack uuid;
+  result json;
+  old_code text;
+begin
+  reset role;
+  select id into carol_pack from packs where name = 'Dog Squad';
+  set local role authenticated;
+
+  -- owner cannot leave
+  result := leave_pack(carol_pack);
+  assert result ->> 'error' = 'Owners cannot leave their own pack', 'owner cannot leave';
+
+  -- eve leaves
+  perform test_login('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee');
+  result := leave_pack(carol_pack);
+  assert (result ->> 'success')::boolean, 'member leaves';
+
+  -- only the owner can remove members
+  perform test_login('dddddddd-dddd-dddd-dddd-dddddddddddd');
+  result := remove_pack_member(carol_pack, 'cccccccc-cccc-cccc-cccc-cccccccccccc');
+  assert result ->> 'error' = 'Only the pack owner can remove members', 'non-owner cannot remove';
+
+  -- owner removes dave; his past finds stay attributed
+  perform test_login('cccccccc-cccc-cccc-cccc-cccccccccccc');
+  result := remove_pack_member(carol_pack, 'dddddddd-dddd-dddd-dddd-dddddddddddd');
+  assert (result ->> 'success')::boolean, 'owner removes member';
+
+  reset role;
+  assert (select count(*) from pack_members where pack_id = carol_pack) = 1, 'only carol remains';
+  assert (select finder_id from quests where description = 'race test') = 'dddddddd-dddd-dddd-dddd-dddddddddddd', 'departed member keeps finder attribution';
+  set local role authenticated;
+
+  -- owner rotates the invite; the old code stops working
+  reset role;
+  select code into old_code from pack_invites where pack_id = carol_pack and revoked_at is null;
+  set local role authenticated;
+  result := regenerate_pack_invite(carol_pack);
+  assert (result ->> 'success')::boolean, 'invite regenerated';
+
+  perform test_login('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee');
+  result := join_pack(old_code);
+  assert result ->> 'error' = 'Invalid invite code', 'revoked code rejected';
+
+  raise notice 'PASS: leave/remove/regenerate (owner rules, attribution survives removal)';
 end $$;
 
 -- ============ storage RLS ============
@@ -188,23 +352,23 @@ begin
   raise notice 'PASS: storage uploads restricted to own folder';
 end $$;
 
--- Assignee can read the creator's quest photo; stranger cannot
+-- Packmates can read each other's quest photos; outsiders cannot
 select test_login('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
 do $$
 begin
   assert (select count(*) from storage.objects
           where name = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/11111111-1111-1111-1111-111111111111/original.jpg') = 1,
-    'assignee reads quest photo';
-  raise notice 'PASS: assignee can read partner''s quest photo';
+    'packmate reads quest photo';
+  raise notice 'PASS: packmate can read quest photos';
 end $$;
 
-select test_login('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee');
+select test_login('cccccccc-cccc-cccc-cccc-cccccccccccc');
 do $$
 begin
   assert (select count(*) from storage.objects
           where name = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/11111111-1111-1111-1111-111111111111/original.jpg') = 0,
-    'stranger cannot read quest photo';
-  raise notice 'PASS: stranger cannot read quest photos';
+    'outsider cannot read quest photo';
+  raise notice 'PASS: outsider cannot read another pack''s quest photos';
 end $$;
 
 -- ============ push trigger resilience ============
@@ -214,8 +378,8 @@ reset role;
 insert into app_config (key, value) values ('push_webhook_url', 'http://localhost:9999/functions/v1/send-push-notification');
 do $$
 begin
-  insert into quests (creator_id, assignee_id, photo_path, description)
-  values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/trigger-test/original.jpg', 'trigger resilience test');
+  insert into quests (pack_id, creator_id, assignee_id, photo_path, description)
+  values ('facadefa-cade-4ace-8ade-000000000001', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/trigger-test/original.jpg', 'trigger resilience test');
   raise notice 'PASS: quest insert survives push-webhook dispatch failure';
 end $$;
 delete from app_config where key = 'push_webhook_url';
