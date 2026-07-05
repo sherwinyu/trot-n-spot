@@ -110,7 +110,7 @@ export function ImageViewerModal({ uri, onClose }: { uri: string | null; onClose
 
 const styles = StyleSheet.create({
   root: {
-    flex: 1,
+    ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.95)',
   },
   closeButton: {
