@@ -1,4 +1,5 @@
-import { StyleSheet, TouchableOpacity, Image, ActivityIndicator, ScrollView } from 'react-native';
+import { StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView } from 'react-native';
+import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { useState, useEffect } from 'react';
 import { Text, View } from '@/components/Themed';
@@ -6,11 +7,13 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import { useCompleteQuest } from '@/hooks/useCompleteQuest';
 import { useJourney } from '@/hooks/useJourney';
+import { useSignedPhotoUrl } from '@/hooks/useSignedPhotoUrl';
 import { QUEST_COLUMNS_NO_LOCATION } from '@/hooks/useQuests';
 import { usePackLookups } from '@/providers/AuthProvider';
 import { capturePhoto } from '@/lib/photos';
 import { notify } from '@/lib/notify';
 import { Quest } from '@/types/database';
+import { ImageViewerModal } from '@/components/ImageViewerModal';
 
 export default function QuestDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -23,9 +26,11 @@ export default function QuestDetailScreen() {
   const [quest, setQuest] = useState<Quest | null>(null);
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [loading, setLoading] = useState(true);
-  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
-  const [completionPhotoUrl, setCompletionPhotoUrl] = useState<string | null>(null);
   const [capturedUri, setCapturedUri] = useState<string | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  const photoUrl = useSignedPhotoUrl(quest?.photo_path);
+  const completionPhotoUrl = useSignedPhotoUrl(quest?.completion_photo_path);
 
   useEffect(() => {
     async function fetchQuest() {
@@ -52,18 +57,6 @@ export default function QuestDetailScreen() {
           if (loc?.location_lat != null && loc?.location_lng != null) {
             setLocation({ lat: loc.location_lat, lng: loc.location_lng });
           }
-        }
-
-        const { data: signed } = await supabase.storage
-          .from('quest-photos')
-          .createSignedUrl(q.photo_path, 3600);
-        if (signed) setPhotoUrl(signed.signedUrl);
-
-        if (q.completion_photo_path) {
-          const { data: compSigned } = await supabase.storage
-            .from('quest-photos')
-            .createSignedUrl(q.completion_photo_path, 3600);
-          if (compSigned) setCompletionPhotoUrl(compSigned.signedUrl);
         }
       }
       setLoading(false);
@@ -125,7 +118,14 @@ export default function QuestDetailScreen() {
       <Stack.Screen options={{ title: quest.description || 'Quest' }} />
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
         {photoUrl && (
-          <Image source={{ uri: photoUrl }} style={styles.mainPhoto} />
+          <TouchableOpacity onPress={() => setPreviewUrl(photoUrl)}>
+            <Image
+              source={{ uri: photoUrl }}
+              style={styles.mainPhoto}
+              cachePolicy="memory-disk"
+              transition={150}
+            />
+          </TouchableOpacity>
         )}
 
         {quest.description && (
@@ -157,7 +157,14 @@ export default function QuestDetailScreen() {
                 ? `Found by ${quest.finder_id === user?.id ? 'you' : memberNames[quest.finder_id] ?? 'a packmate'}!`
                 : 'Found!'}
             </Text>
-            <Image source={{ uri: completionPhotoUrl }} style={styles.mainPhoto} />
+            <TouchableOpacity onPress={() => setPreviewUrl(completionPhotoUrl)}>
+              <Image
+                source={{ uri: completionPhotoUrl }}
+                style={styles.mainPhoto}
+                cachePolicy="memory-disk"
+                transition={150}
+              />
+            </TouchableOpacity>
             {quest.completed_at && (
               <Text style={styles.meta}>
                 Completed {new Date(quest.completed_at).toLocaleDateString()}
@@ -179,9 +186,17 @@ export default function QuestDetailScreen() {
             <Text style={styles.sectionLabel}>Compare</Text>
             <View style={styles.comparison}>
               {photoUrl && (
-                <Image source={{ uri: photoUrl }} style={styles.comparisonPhoto} />
+                <TouchableOpacity style={styles.comparisonPhoto} onPress={() => setPreviewUrl(photoUrl)}>
+                  <Image
+                    source={{ uri: photoUrl }}
+                    style={styles.comparisonPhoto}
+                    cachePolicy="memory-disk"
+                  />
+                </TouchableOpacity>
               )}
-              <Image source={{ uri: capturedUri }} style={styles.comparisonPhoto} />
+              <TouchableOpacity style={styles.comparisonPhoto} onPress={() => setPreviewUrl(capturedUri)}>
+                <Image source={{ uri: capturedUri }} style={styles.comparisonPhoto} />
+              </TouchableOpacity>
             </View>
 
             <View style={styles.confirmActions}>
@@ -209,6 +224,7 @@ export default function QuestDetailScreen() {
           </>
         )}
       </ScrollView>
+      <ImageViewerModal uri={previewUrl} onClose={() => setPreviewUrl(null)} />
     </>
   );
 }

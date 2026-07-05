@@ -1,30 +1,30 @@
-import { StyleSheet, FlatList, TouchableOpacity, Image, RefreshControl } from 'react-native';
+import { StyleSheet, FlatList, TouchableOpacity, RefreshControl } from 'react-native';
+import { Image } from 'expo-image';
 import { useRouter, useFocusEffect } from 'expo-router';
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { Text, View } from '@/components/Themed';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
 import { useQuests } from '@/hooks/useQuests';
+import { useSignedPhotoUrl } from '@/hooks/useSignedPhotoUrl';
 import { useSync } from '@/providers/SyncProvider';
 import { useAuth, usePackLookups } from '@/providers/AuthProvider';
 import { Quest } from '@/types/database';
-import { supabase } from '@/lib/supabase';
 import { getTimeAgo } from '@/lib/format';
-import { useState, useEffect } from 'react';
+import { ImageViewerModal } from '@/components/ImageViewerModal';
 
-function QuestCard({ quest, subtitle }: { quest: Quest; subtitle?: string }) {
+function QuestCard({
+  quest,
+  subtitle,
+  onPreviewPhoto,
+}: {
+  quest: Quest;
+  subtitle?: string;
+  onPreviewPhoto: (url: string) => void;
+}) {
   const router = useRouter();
   const c = Colors[useColorScheme() ?? 'light'];
-  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
-
-  useEffect(() => {
-    supabase.storage
-      .from('quest-photos')
-      .createSignedUrl(quest.photo_path, 3600)
-      .then(({ data }) => {
-        if (data) setPhotoUrl(data.signedUrl);
-      });
-  }, [quest.photo_path]);
+  const photoUrl = useSignedPhotoUrl(quest.photo_path);
 
   const timeAgo = getTimeAgo(quest.created_at);
 
@@ -34,7 +34,14 @@ function QuestCard({ quest, subtitle }: { quest: Quest; subtitle?: string }) {
       onPress={() => router.push(`/quest/${quest.id}`)}
     >
       {photoUrl ? (
-        <Image source={{ uri: photoUrl }} style={styles.cardImage} />
+        <TouchableOpacity onPress={() => onPreviewPhoto(photoUrl)}>
+          <Image
+            source={{ uri: photoUrl }}
+            style={styles.cardImage}
+            cachePolicy="memory-disk"
+            transition={150}
+          />
+        </TouchableOpacity>
       ) : (
         <View style={[styles.cardImage, styles.imagePlaceholder, { backgroundColor: c.cardAlt }]}>
           <Text style={styles.placeholderIcon}>🔍</Text>
@@ -57,6 +64,7 @@ export default function FeedScreen() {
   const { pendingCount } = useSync();
   const { packs } = useAuth();
   const { memberNames, packNames } = usePackLookups();
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   const showPackLabels = packs.length > 1;
   const packLabel = (q: Quest) => (showPackLabels ? packNames[q.pack_id] : undefined);
@@ -77,13 +85,14 @@ export default function FeedScreen() {
   );
 
   return (
-    <FlatList
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      refreshControl={<RefreshControl refreshing={loading} onRefresh={refresh} />}
-      data={[]}
-      renderItem={null}
-      ListHeaderComponent={
+    <>
+      <FlatList
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        refreshControl={<RefreshControl refreshing={loading} onRefresh={refresh} />}
+        data={[]}
+        renderItem={null}
+        ListHeaderComponent={
         <>
           {pendingCount > 0 && (
             <View style={styles.syncBanner}>
@@ -99,7 +108,12 @@ export default function FeedScreen() {
             </Text>
           ) : (
             forMe.map((q) => (
-              <QuestCard key={q.id} quest={q} subtitle={withPack(`From ${nameOf(q.creator_id)}`, q)} />
+              <QuestCard
+                key={q.id}
+                quest={q}
+                subtitle={withPack(`From ${nameOf(q.creator_id)}`, q)}
+                onPreviewPhoto={setPreviewUrl}
+              />
             ))
           )}
 
@@ -111,6 +125,7 @@ export default function FeedScreen() {
                   key={q.id}
                   quest={q}
                   subtitle={withPack(`${nameOf(q.creator_id)} spotted this — first to find it wins`, q)}
+                  onPreviewPhoto={setPreviewUrl}
                 />
               ))}
             </>
@@ -127,6 +142,7 @@ export default function FeedScreen() {
                 key={q.id}
                 quest={q}
                 subtitle={withPack(q.mode === 'open' ? 'Open to the pack' : `For ${nameOf(q.assignee_id)}`, q)}
+                onPreviewPhoto={setPreviewUrl}
               />
             ))
           )}
@@ -139,13 +155,16 @@ export default function FeedScreen() {
                   key={q.id}
                   quest={q}
                   subtitle={withPack(`${nameOf(q.creator_id)} left one for ${nameOf(q.assignee_id)}`, q)}
+                  onPreviewPhoto={setPreviewUrl}
                 />
               ))}
             </>
           )}
         </>
-      }
-    />
+        }
+      />
+      <ImageViewerModal uri={previewUrl} onClose={() => setPreviewUrl(null)} />
+    </>
   );
 }
 
