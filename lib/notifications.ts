@@ -7,11 +7,18 @@ import { Platform } from 'react-native';
 export async function registerForPushNotifications(): Promise<string | null> {
   if (Platform.OS === 'web') return null;
 
-  const { status: existingStatus } = await Notifications.getPermissionsAsync();
+  // expo-notifications inherits this field from expo-modules-core. Keep the
+  // narrow local shape so consumers do not need to install that internal Expo
+  // package directly just to resolve the inherited TypeScript declaration.
+  const { status: existingStatus } = await Notifications.getPermissionsAsync() as unknown as {
+    status: 'granted' | 'denied' | 'undetermined';
+  };
   let finalStatus = existingStatus;
 
   if (existingStatus !== 'granted') {
-    const { status } = await Notifications.requestPermissionsAsync();
+    const { status } = await Notifications.requestPermissionsAsync() as unknown as {
+      status: 'granted' | 'denied' | 'undetermined';
+    };
     finalStatus = status;
   }
 

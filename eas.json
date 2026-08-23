@@ -24,6 +24,10 @@
         "EXPO_PUBLIC_ENABLE_EMAIL_LOGIN": "true"
       }
     },
-    "production": {}
+    "production": {
+      "distribution": "store",
+      "environment": "production",
+      "autoIncrement": true
+    }
   }
 }

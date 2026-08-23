@@ -15,6 +15,9 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "xyz.sherwinyu.trotnspot",
+      "config": {
+        "usesNonExemptEncryption": false
+      },
       "infoPlist": {
         "NSCameraUsageDescription": "TrotNSpot needs camera access to photograph things for your partner to find.",
         "NSLocationWhenInUseUsageDescription": "TrotNSpot records your location when you create a quest so you can see where you found things.",
@@ -74,7 +77,6 @@
     "experiments": {
       "typedRoutes": true
     },
-    "newArchEnabled": true,
     "extra": {
       "router": {},
       "eas": {

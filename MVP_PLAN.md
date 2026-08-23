@@ -86,7 +86,7 @@ verification on physical devices.
    - Bundle identifiers: `xyz.sherwinyu.trotnspot` (iOS + Android)
    - Set `expo-camera`, `expo-location`, `expo-notifications` permissions with user-facing descriptions
    - Configure `expo-updates` URL
-   - Set `newArchEnabled: true`
+   - Use Expo SDK 55's default New Architecture runtime
 4. Create `eas.json` for dev builds (development profile for iOS simulator + physical device, Android emulator + physical device)
 5. Set up environment config:
    - `/config/supabase.ts` — Supabase URL + anon key (from env vars)
