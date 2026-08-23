@@ -68,7 +68,8 @@
         {
           "icon": "./assets/images/icon.png"
         }
-      ]
+      ],
+      "expo-image"
     ],
     "experiments": {
       "typedRoutes": true

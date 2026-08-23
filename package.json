@@ -29,6 +29,7 @@
     "expo-crypto": "^55.0.9",
     "expo-dev-client": "~55.0.16",
     "expo-font": "~55.0.4",
+    "expo-image": "55.0.6",
     "expo-image-manipulator": "~55.0.10",
     "expo-image-picker": "~55.0.12",
     "expo-linking": "~55.0.7",

@@ -1,55 +1,74 @@
-import { StyleSheet, FlatList, TouchableOpacity, Image, RefreshControl } from 'react-native';
-import { useRouter, useFocusEffect } from 'expo-router';
-import { useCallback } from 'react';
+import { memo, useCallback, useMemo } from 'react';
+import { FlatList, RefreshControl, StyleSheet, TouchableOpacity } from 'react-native';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { QuestPhoto } from '@/components/QuestPhoto';
 import { Text, View } from '@/components/Themed';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
 import { useQuests } from '@/hooks/useQuests';
-import { useSync } from '@/providers/SyncProvider';
-import { useAuth, usePackLookups } from '@/providers/AuthProvider';
-import { Quest } from '@/types/database';
-import { supabase } from '@/lib/supabase';
 import { getTimeAgo } from '@/lib/format';
-import { useState, useEffect } from 'react';
+import { useAuth, usePackLookups } from '@/providers/AuthProvider';
+import { useSync } from '@/providers/SyncProvider';
+import { Quest } from '@/types/database';
 
-function QuestCard({ quest, subtitle }: { quest: Quest; subtitle?: string }) {
+type FeedRow =
+  | { type: 'sync'; key: string; pendingCount: number }
+  | { type: 'section'; key: string; title: string }
+  | { type: 'empty'; key: string; message: string }
+  | { type: 'quest'; key: string; quest: Quest; subtitle?: string };
+
+const QuestCard = memo(function QuestCard({
+  quest,
+  subtitle,
+}: {
+  quest: Quest;
+  subtitle?: string;
+}) {
   const router = useRouter();
   const c = Colors[useColorScheme() ?? 'light'];
-  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
-
-  useEffect(() => {
-    supabase.storage
-      .from('quest-photos')
-      .createSignedUrl(quest.photo_path, 3600)
-      .then(({ data }) => {
-        if (data) setPhotoUrl(data.signedUrl);
-      });
-  }, [quest.photo_path]);
-
-  const timeAgo = getTimeAgo(quest.created_at);
+  const thumbnailPath = quest.photo_thumbnail_path ?? quest.photo_path;
+  const fallback = (
+    <View style={[styles.cardImage, styles.imagePlaceholder, { backgroundColor: c.cardAlt }]}>
+      <Text style={styles.placeholderIcon}>🔍</Text>
+    </View>
+  );
 
   return (
     <TouchableOpacity
       style={[styles.card, { backgroundColor: c.card }]}
       onPress={() => router.push(`/quest/${quest.id}`)}
+      accessibilityRole="button"
+      accessibilityLabel={quest.description || 'Open quest'}
     >
-      {photoUrl ? (
-        <Image source={{ uri: photoUrl }} style={styles.cardImage} />
-      ) : (
-        <View style={[styles.cardImage, styles.imagePlaceholder, { backgroundColor: c.cardAlt }]}>
-          <Text style={styles.placeholderIcon}>🔍</Text>
-        </View>
-      )}
+      <QuestPhoto
+        storagePath={thumbnailPath}
+        style={styles.cardImage}
+        fallback={fallback}
+        accessibilityLabel={quest.description || 'Quest photo'}
+      />
       <View style={styles.cardContent}>
-        <Text style={styles.cardDescription}>
-          {quest.description || 'Find this!'}
-        </Text>
+        <Text style={styles.cardDescription}>{quest.description || 'Find this!'}</Text>
         <Text style={styles.cardMeta}>
-          {subtitle ? `${subtitle} · ${timeAgo}` : timeAgo}
+          {subtitle ? `${subtitle} · ${getTimeAgo(quest.created_at)}` : getTimeAgo(quest.created_at)}
         </Text>
       </View>
     </TouchableOpacity>
   );
+});
+
+function renderFeedRow({ item }: { item: FeedRow }) {
+  if (item.type === 'sync') {
+    return (
+      <View style={styles.syncBanner}>
+        <Text style={styles.syncBannerText}>
+          {item.pendingCount} {item.pendingCount === 1 ? 'quest' : 'quests'} waiting to sync — will send when back online
+        </Text>
+      </View>
+    );
+  }
+  if (item.type === 'section') return <Text style={styles.sectionTitle}>{item.title}</Text>;
+  if (item.type === 'empty') return <Text style={styles.emptyText}>{item.message}</Text>;
+  return <QuestCard quest={item.quest} subtitle={item.subtitle} />;
 }
 
 export default function FeedScreen() {
@@ -58,18 +77,75 @@ export default function FeedScreen() {
   const { packs } = useAuth();
   const { memberNames, packNames } = usePackLookups();
 
-  const showPackLabels = packs.length > 1;
-  const packLabel = (q: Quest) => (showPackLabels ? packNames[q.pack_id] : undefined);
-  const nameOf = (id: string | null) => (id ? memberNames[id] ?? 'a packmate' : '');
+  const rows = useMemo<FeedRow[]>(() => {
+    const next: FeedRow[] = [];
+    const showPackLabels = packs.length > 1;
+    const nameOf = (id: string | null) => (id ? memberNames[id] ?? 'a packmate' : '');
+    const withPack = (base: string | undefined, quest: Quest) => {
+      const label = showPackLabels ? packNames[quest.pack_id] : undefined;
+      if (base && label) return `${base} · ${label}`;
+      return base ?? label;
+    };
+    const addQuest = (section: string, quest: Quest, subtitle?: string) => {
+      next.push({ type: 'quest', key: `${section}:${quest.id}`, quest, subtitle });
+    };
 
-  const withPack = (base: string | undefined, q: Quest) => {
-    const label = packLabel(q);
-    if (base && label) return `${base} · ${label}`;
-    return base ?? label;
-  };
+    if (pendingCount > 0) next.push({ type: 'sync', key: 'sync', pendingCount });
 
-  // Tab screens stay mounted, so refetch whenever the feed regains
-  // focus (e.g. right after creating a quest on the Create tab).
+    next.push({ type: 'section', key: 'for-me-heading', title: 'Quests for You' });
+    if (forMe.length === 0) {
+      next.push({
+        type: 'empty',
+        key: 'for-me-empty',
+        message: 'Nothing yet — your packmates are still out spotting.',
+      });
+    } else {
+      forMe.forEach((quest) => addQuest(
+        'for-me',
+        quest,
+        withPack(`From ${nameOf(quest.creator_id)}`, quest)
+      ));
+    }
+
+    if (openForPack.length > 0) {
+      next.push({ type: 'section', key: 'open-heading', title: 'Open to the Pack' });
+      openForPack.forEach((quest) => addQuest(
+        'open',
+        quest,
+        withPack(`${nameOf(quest.creator_id)} spotted this — first to find it wins`, quest)
+      ));
+    }
+
+    next.push({ type: 'section', key: 'by-me-heading', title: 'Quests by You' });
+    if (byMe.length === 0) {
+      next.push({ type: 'empty', key: 'by-me-empty', message: 'Create a quest for your pack!' });
+    } else {
+      byMe.forEach((quest) => addQuest(
+        'by-me',
+        quest,
+        withPack(
+          quest.mode === 'open' ? 'Open to the pack' : `For ${nameOf(quest.assignee_id)}`,
+          quest
+        )
+      ));
+    }
+
+    if (aroundMyPacks.length > 0) {
+      next.push({ type: 'section', key: 'around-heading', title: 'Around Your Packs' });
+      aroundMyPacks.forEach((quest) => addQuest(
+        'around',
+        quest,
+        withPack(
+          `${nameOf(quest.creator_id)} left one for ${nameOf(quest.assignee_id)}`,
+          quest
+        )
+      ));
+    }
+
+    return next;
+  }, [aroundMyPacks, byMe, forMe, memberNames, openForPack, packNames, packs.length, pendingCount]);
+
+  // Tab screens stay mounted, so refetch whenever the feed regains focus.
   useFocusEffect(
     useCallback(() => {
       refresh();
@@ -81,70 +157,12 @@ export default function FeedScreen() {
       style={styles.container}
       contentContainerStyle={styles.content}
       refreshControl={<RefreshControl refreshing={loading} onRefresh={refresh} />}
-      data={[]}
-      renderItem={null}
-      ListHeaderComponent={
-        <>
-          {pendingCount > 0 && (
-            <View style={styles.syncBanner}>
-              <Text style={styles.syncBannerText}>
-                {pendingCount} {pendingCount === 1 ? 'quest' : 'quests'} waiting to sync — will send when back online
-              </Text>
-            </View>
-          )}
-          <Text style={styles.sectionTitle}>Quests for You</Text>
-          {forMe.length === 0 ? (
-            <Text style={styles.emptyText}>
-              Nothing yet — your packmates are still out spotting.
-            </Text>
-          ) : (
-            forMe.map((q) => (
-              <QuestCard key={q.id} quest={q} subtitle={withPack(`From ${nameOf(q.creator_id)}`, q)} />
-            ))
-          )}
-
-          {openForPack.length > 0 && (
-            <>
-              <Text style={styles.sectionTitle}>Open to the Pack</Text>
-              {openForPack.map((q) => (
-                <QuestCard
-                  key={q.id}
-                  quest={q}
-                  subtitle={withPack(`${nameOf(q.creator_id)} spotted this — first to find it wins`, q)}
-                />
-              ))}
-            </>
-          )}
-
-          <Text style={styles.sectionTitle}>Quests by You</Text>
-          {byMe.length === 0 ? (
-            <Text style={styles.emptyText}>
-              Create a quest for your pack!
-            </Text>
-          ) : (
-            byMe.map((q) => (
-              <QuestCard
-                key={q.id}
-                quest={q}
-                subtitle={withPack(q.mode === 'open' ? 'Open to the pack' : `For ${nameOf(q.assignee_id)}`, q)}
-              />
-            ))
-          )}
-
-          {aroundMyPacks.length > 0 && (
-            <>
-              <Text style={styles.sectionTitle}>Around Your Packs</Text>
-              {aroundMyPacks.map((q) => (
-                <QuestCard
-                  key={q.id}
-                  quest={q}
-                  subtitle={withPack(`${nameOf(q.creator_id)} left one for ${nameOf(q.assignee_id)}`, q)}
-                />
-              ))}
-            </>
-          )}
-        </>
-      }
+      data={rows}
+      keyExtractor={(item) => item.key}
+      renderItem={renderFeedRow}
+      initialNumToRender={8}
+      maxToRenderPerBatch={6}
+      windowSize={5}
     />
   );
 }

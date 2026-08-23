@@ -17,10 +17,17 @@ values
   ('00000000-0000-0000-0000-000000000000', 'dddddddd-dddd-dddd-dddd-dddddddddddd', 'authenticated', 'authenticated', 'test-dave@quest.dev', crypt('testpass123', gen_salt('bf')), now(), '{"full_name": "Dave"}'::jsonb, now(), now(), '', '', '', ''),
   ('00000000-0000-0000-0000-000000000000', 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', 'authenticated', 'authenticated', 'test-eve@quest.dev', crypt('testpass123', gen_salt('bf')), now(), '{"full_name": "Eve"}'::jsonb, now(), now(), '', '', '', '');
 
--- storage objects matching one seeded quest, for storage RLS tests
+-- Variant metadata + storage objects matching one seeded quest, for storage RLS tests
+update quests set
+  photo_full_path = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/11111111-1111-1111-1111-111111111111/full.jpg',
+  photo_thumbnail_path = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/11111111-1111-1111-1111-111111111111/thumbnail.jpg'
+where id = '11111111-1111-1111-1111-111111111111';
+
 insert into storage.objects (bucket_id, name)
 values
-  ('quest-photos', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/11111111-1111-1111-1111-111111111111/original.jpg');
+  ('quest-photos', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/11111111-1111-1111-1111-111111111111/original.jpg'),
+  ('quest-photos', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/11111111-1111-1111-1111-111111111111/full.jpg'),
+  ('quest-photos', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/11111111-1111-1111-1111-111111111111/thumbnail.jpg');
 
 -- ============ profile trigger ============
 do $$
@@ -173,6 +180,24 @@ end $$;
 -- ============ complete_quest RPC: targeted mode ============
 -- Quest 1: creator = Nadia (b), assignee = Sherwin (a)
 
+-- Anonymous callers are rejected before nullable auth comparisons.
+reset role;
+select set_config('request.jwt.claims', '{}'::text, false);
+set role anon;
+do $$
+declare result json;
+begin
+  result := complete_quest(
+    '11111111-1111-1111-1111-111111111111',
+    'anonymous/11111111-1111-1111-1111-111111111111/completion.jpg',
+    null
+  );
+  assert result ->> 'error' = 'Not signed in', 'anonymous completion rejected';
+  raise notice 'PASS: complete_quest requires authentication';
+end $$;
+reset role;
+set role authenticated;
+
 -- Creator cannot complete own quest
 select test_login('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
 do $$
@@ -188,13 +213,25 @@ select test_login('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
 do $$
 declare result json;
 begin
-  result := complete_quest('11111111-1111-1111-1111-111111111111', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/11111111-1111-1111-1111-111111111111/completion.jpg', null);
+  result := complete_quest('11111111-1111-1111-1111-111111111111', 'x.jpg', null);
+  assert result ->> 'error' = 'Invalid completion photo path', 'completion path is scoped to finder and quest';
+
+  result := complete_quest(
+    '11111111-1111-1111-1111-111111111111',
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/11111111-1111-1111-1111-111111111111/completion-detail.jpg',
+    null,
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/11111111-1111-1111-1111-111111111111/completion-full.jpg',
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/11111111-1111-1111-1111-111111111111/completion-thumbnail.jpg'
+  );
   assert (result ->> 'success')::boolean, 'assignee completes quest';
 
   reset role;
   assert (select status from quests where id = '11111111-1111-1111-1111-111111111111') = 'completed', 'status flipped';
   assert (select completed_at from quests where id = '11111111-1111-1111-1111-111111111111') is not null, 'completed_at set';
   assert (select finder_id from quests where id = '11111111-1111-1111-1111-111111111111') = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'finder recorded';
+  assert (select completion_photo_path from quests where id = '11111111-1111-1111-1111-111111111111') like '%/completion-detail.jpg', 'completion detail path recorded';
+  assert (select completion_full_path from quests where id = '11111111-1111-1111-1111-111111111111') like '%/completion-full.jpg', 'completion full path recorded';
+  assert (select completion_thumbnail_path from quests where id = '11111111-1111-1111-1111-111111111111') like '%/completion-thumbnail.jpg', 'completion thumbnail path recorded';
   set local role authenticated;
 
   -- double completion (offline replay) stays idempotent
@@ -257,23 +294,22 @@ select test_login('cccccccc-cccc-cccc-cccc-cccccccccccc');
 do $$
 declare
   carol_pack uuid;
-  race_quest uuid;
+  race_quest uuid := '77777777-7777-7777-7777-777777777777';
   result json;
 begin
   reset role;
   select id into carol_pack from packs where name = 'Dog Squad';
   set local role authenticated;
 
-  insert into quests (pack_id, creator_id, assignee_id, mode, photo_path, description)
-  values (carol_pack, auth.uid(), null, 'open', 'cccccccc-cccc-cccc-cccc-cccccccccccc/race/original.jpg', 'race test')
-  returning id into race_quest;
+  insert into quests (id, pack_id, creator_id, assignee_id, mode, photo_path, description)
+  values (race_quest, carol_pack, auth.uid(), null, 'open', 'cccccccc-cccc-cccc-cccc-cccccccccccc/77777777-7777-7777-7777-777777777777/detail.jpg', 'race test');
 
   perform test_login('dddddddd-dddd-dddd-dddd-dddddddddddd');
-  result := complete_quest(race_quest, 'dddddddd-dddd-dddd-dddd-dddddddddddd/race/completion.jpg', null);
+  result := complete_quest(race_quest, 'dddddddd-dddd-dddd-dddd-dddddddddddd/77777777-7777-7777-7777-777777777777/completion-detail.jpg', null);
   assert (result ->> 'success')::boolean, 'dave wins the race';
 
   perform test_login('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee');
-  result := complete_quest(race_quest, 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee/race/completion.jpg', null);
+  result := complete_quest(race_quest, 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee/77777777-7777-7777-7777-777777777777/completion-detail.jpg', null);
   assert result ->> 'error' = 'Already found by Dave', 'loser told who won';
 
   perform test_login('dddddddd-dddd-dddd-dddd-dddddddddddd');
@@ -357,18 +393,18 @@ select test_login('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
 do $$
 begin
   assert (select count(*) from storage.objects
-          where name = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/11111111-1111-1111-1111-111111111111/original.jpg') = 1,
-    'packmate reads quest photo';
-  raise notice 'PASS: packmate can read quest photos';
+          where name like 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/11111111-1111-1111-1111-111111111111/%') = 3,
+    'packmate reads all quest photo variants';
+  raise notice 'PASS: packmate can read all quest photo variants';
 end $$;
 
 select test_login('cccccccc-cccc-cccc-cccc-cccccccccccc');
 do $$
 begin
   assert (select count(*) from storage.objects
-          where name = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/11111111-1111-1111-1111-111111111111/original.jpg') = 0,
-    'outsider cannot read quest photo';
-  raise notice 'PASS: outsider cannot read another pack''s quest photos';
+          where name like 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/11111111-1111-1111-1111-111111111111/%') = 0,
+    'outsider cannot read quest photo variants';
+  raise notice 'PASS: outsider cannot read another pack''s quest photo variants';
 end $$;
 
 -- ============ push trigger resilience ============

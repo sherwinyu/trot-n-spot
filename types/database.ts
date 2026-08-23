@@ -1,7 +1,7 @@
 // Quests fetched on behalf of a possible finder never include location —
 // that's the hunt. Used everywhere quest lists and details are fetched.
 export const QUEST_COLUMNS_NO_LOCATION =
-  'id, pack_id, creator_id, assignee_id, finder_id, mode, journey_id, status, description, photo_path, completion_photo_path, completion_journey_id, completed_at, created_at, updated_at';
+  'id, pack_id, creator_id, assignee_id, finder_id, mode, journey_id, status, description, photo_path, photo_full_path, photo_thumbnail_path, completion_photo_path, completion_full_path, completion_thumbnail_path, completion_journey_id, completed_at, created_at, updated_at';
 
 export type Profile = {
   id: string;
@@ -56,10 +56,15 @@ export type Quest = {
   journey_id: string | null;
   status: 'active' | 'completed';
   description: string | null;
+  // photo_path remains the normal detail image for legacy client compatibility.
   photo_path: string;
+  photo_full_path: string | null;
+  photo_thumbnail_path: string | null;
   location_lat: number | null;
   location_lng: number | null;
   completion_photo_path: string | null;
+  completion_full_path: string | null;
+  completion_thumbnail_path: string | null;
   completion_journey_id: string | null;
   completed_at: string | null;
   created_at: string;

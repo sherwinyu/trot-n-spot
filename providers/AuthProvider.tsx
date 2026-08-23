@@ -1,8 +1,11 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
+import { Platform } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import { signInWithGoogle, signOut as authSignOut } from '@/lib/auth';
 import { Profile, PackWithMembers } from '@/types/database';
+import { clearSignedPhotoUrlCache } from '@/lib/signedUrls';
 
 type AuthContextType = {
   user: User | null;
@@ -98,6 +101,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = useCallback(async () => {
     await authSignOut();
+    clearSignedPhotoUrlCache();
+    if (Platform.OS !== 'web') {
+      await Promise.allSettled([
+        ExpoImage.clearMemoryCache(),
+        ExpoImage.clearDiskCache(),
+      ]);
+    }
     setUser(null);
     setSession(null);
     setProfile(null);
@@ -124,13 +134,15 @@ export function useAuth() {
 // detail ("For Nadia", "Found by Dave", pack name labels).
 export function usePackLookups() {
   const { packs } = useAuth();
-  const memberNames: Record<string, string> = {};
-  const packNames: Record<string, string> = {};
-  for (const pack of packs) {
-    packNames[pack.id] = pack.name;
-    for (const member of pack.members) {
-      if (member.profile) memberNames[member.user_id] = member.profile.display_name;
+  return useMemo(() => {
+    const memberNames: Record<string, string> = {};
+    const packNames: Record<string, string> = {};
+    for (const pack of packs) {
+      packNames[pack.id] = pack.name;
+      for (const member of pack.members) {
+        if (member.profile) memberNames[member.user_id] = member.profile.display_name;
+      }
     }
-  }
-  return { memberNames, packNames };
+    return { memberNames, packNames };
+  }, [packs]);
 }

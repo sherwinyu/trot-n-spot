@@ -1,38 +1,19 @@
-import { StyleSheet, FlatList, TouchableOpacity, Image, RefreshControl } from 'react-native';
+import { StyleSheet, FlatList, TouchableOpacity, RefreshControl } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useCallback } from 'react';
+import { QuestPhoto } from '@/components/QuestPhoto';
 import { Text, View } from '@/components/Themed';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
 import { useQuests } from '@/hooks/useQuests';
 import { Quest } from '@/types/database';
-import { supabase } from '@/lib/supabase';
 import { formatDuration } from '@/lib/format';
-import { useState, useEffect } from 'react';
 
 function HistoryCard({ quest }: { quest: Quest }) {
   const router = useRouter();
   const c = Colors[useColorScheme() ?? 'light'];
-  const [originalUrl, setOriginalUrl] = useState<string | null>(null);
-  const [completionUrl, setCompletionUrl] = useState<string | null>(null);
-
-  useEffect(() => {
-    supabase.storage
-      .from('quest-photos')
-      .createSignedUrl(quest.photo_path, 3600)
-      .then(({ data }) => {
-        if (data) setOriginalUrl(data.signedUrl);
-      });
-
-    if (quest.completion_photo_path) {
-      supabase.storage
-        .from('quest-photos')
-        .createSignedUrl(quest.completion_photo_path, 3600)
-        .then(({ data }) => {
-          if (data) setCompletionUrl(data.signedUrl);
-        });
-    }
-  }, [quest]);
+  const originalPath = quest.photo_thumbnail_path ?? quest.photo_path;
+  const completionPath = quest.completion_thumbnail_path ?? quest.completion_photo_path;
 
   const timeToFind = quest.completed_at
     ? formatDuration(new Date(quest.completed_at).getTime() - new Date(quest.created_at).getTime())
@@ -42,22 +23,30 @@ function HistoryCard({ quest }: { quest: Quest }) {
     <TouchableOpacity
       style={[styles.card, { backgroundColor: c.card }]}
       onPress={() => router.push(`/quest/${quest.id}`)}
+      accessibilityRole="button"
+      accessibilityLabel={quest.description || 'Open completed quest'}
     >
       <View style={styles.photos}>
-        {originalUrl ? (
-          <Image source={{ uri: originalUrl }} style={styles.photo} />
-        ) : (
-          <View style={[styles.photo, styles.photoPlaceholder, { backgroundColor: c.cardAlt }]}>
-            <Text style={styles.placeholderIcon}>🔍</Text>
-          </View>
-        )}
-        {completionUrl ? (
-          <Image source={{ uri: completionUrl }} style={styles.photo} />
-        ) : (
-          <View style={[styles.photo, styles.photoPlaceholder, { backgroundColor: c.cardAlt }]}>
-            <Text style={styles.placeholderIcon}>✅</Text>
-          </View>
-        )}
+        <QuestPhoto
+          storagePath={originalPath}
+          style={styles.photo}
+          accessibilityLabel="Original quest photo"
+          fallback={
+            <View style={[styles.photo, styles.photoPlaceholder, { backgroundColor: c.cardAlt }]}>
+              <Text style={styles.placeholderIcon}>🔍</Text>
+            </View>
+          }
+        />
+        <QuestPhoto
+          storagePath={completionPath}
+          style={styles.photo}
+          accessibilityLabel="Completed quest photo"
+          fallback={
+            <View style={[styles.photo, styles.photoPlaceholder, { backgroundColor: c.cardAlt }]}>
+              <Text style={styles.placeholderIcon}>✅</Text>
+            </View>
+          }
+        />
       </View>
       <View style={styles.cardInfo}>
         <Text style={styles.cardDescription}>

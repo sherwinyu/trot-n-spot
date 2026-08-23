@@ -1,4 +1,5 @@
-import { StyleSheet, TouchableOpacity, Image, ActivityIndicator, ScrollView } from 'react-native';
+import { StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView } from 'react-native';
+import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { useState, useEffect } from 'react';
 import { Text, View } from '@/components/Themed';
@@ -11,6 +12,7 @@ import { usePackLookups } from '@/providers/AuthProvider';
 import { capturePhoto } from '@/lib/photos';
 import { notify } from '@/lib/notify';
 import { Quest } from '@/types/database';
+import { QuestPhoto } from '@/components/QuestPhoto';
 
 export default function QuestDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -23,8 +25,6 @@ export default function QuestDetailScreen() {
   const [quest, setQuest] = useState<Quest | null>(null);
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [loading, setLoading] = useState(true);
-  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
-  const [completionPhotoUrl, setCompletionPhotoUrl] = useState<string | null>(null);
   const [capturedUri, setCapturedUri] = useState<string | null>(null);
 
   useEffect(() => {
@@ -52,18 +52,6 @@ export default function QuestDetailScreen() {
           if (loc?.location_lat != null && loc?.location_lng != null) {
             setLocation({ lat: loc.location_lat, lng: loc.location_lng });
           }
-        }
-
-        const { data: signed } = await supabase.storage
-          .from('quest-photos')
-          .createSignedUrl(q.photo_path, 3600);
-        if (signed) setPhotoUrl(signed.signedUrl);
-
-        if (q.completion_photo_path) {
-          const { data: compSigned } = await supabase.storage
-            .from('quest-photos')
-            .createSignedUrl(q.completion_photo_path, 3600);
-          if (compSigned) setCompletionPhotoUrl(compSigned.signedUrl);
         }
       }
       setLoading(false);
@@ -124,9 +112,11 @@ export default function QuestDetailScreen() {
     <>
       <Stack.Screen options={{ title: quest.description || 'Quest' }} />
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-        {photoUrl && (
-          <Image source={{ uri: photoUrl }} style={styles.mainPhoto} />
-        )}
+        <QuestPhoto
+          storagePath={quest.photo_path}
+          style={styles.mainPhoto}
+          accessibilityLabel={quest.description || 'Quest photo'}
+        />
 
         {quest.description && (
           <Text style={styles.description}>{quest.description}</Text>
@@ -150,14 +140,18 @@ export default function QuestDetailScreen() {
           </Text>
         )}
 
-        {quest.status === 'completed' && completionPhotoUrl && (
+        {quest.status === 'completed' && quest.completion_photo_path && (
           <>
             <Text style={styles.sectionLabel}>
               {quest.finder_id
                 ? `Found by ${quest.finder_id === user?.id ? 'you' : memberNames[quest.finder_id] ?? 'a packmate'}!`
                 : 'Found!'}
             </Text>
-            <Image source={{ uri: completionPhotoUrl }} style={styles.mainPhoto} />
+            <QuestPhoto
+              storagePath={quest.completion_photo_path}
+              style={styles.mainPhoto}
+              accessibilityLabel="Completed quest photo"
+            />
             {quest.completed_at && (
               <Text style={styles.meta}>
                 Completed {new Date(quest.completed_at).toLocaleDateString()}
@@ -178,10 +172,17 @@ export default function QuestDetailScreen() {
           <>
             <Text style={styles.sectionLabel}>Compare</Text>
             <View style={styles.comparison}>
-              {photoUrl && (
-                <Image source={{ uri: photoUrl }} style={styles.comparisonPhoto} />
-              )}
-              <Image source={{ uri: capturedUri }} style={styles.comparisonPhoto} />
+              <QuestPhoto
+                storagePath={quest.photo_path}
+                style={styles.comparisonPhoto}
+                accessibilityLabel="Quest photo to match"
+              />
+              <Image
+                source={{ uri: capturedUri }}
+                style={styles.comparisonPhoto}
+                contentFit="cover"
+                accessibilityLabel="Your captured photo"
+              />
             </View>
 
             <View style={styles.confirmActions}>

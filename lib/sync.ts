@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
-import { compressPhoto, uploadPhoto } from '@/lib/photos';
+import { createPhotoVariants, uploadPhoto } from '@/lib/photos';
+import { getPhotoVariantPaths } from '@/lib/photoVariants';
 import { flushQueue, FlushHandlers } from '@/lib/offline';
 
 // The actual server writes for each queued mutation type. Shared by the
@@ -18,9 +19,13 @@ export async function syncCreateQuest(payload: {
   locationLng: number | null;
   createdAt?: string;
 }): Promise<void> {
-  const compressedUri = await compressPhoto(payload.photoUri);
-  const photoPath = `${payload.creatorId}/${payload.questId}/original.jpg`;
-  await uploadPhoto(compressedUri, photoPath);
+  const variants = await createPhotoVariants(payload.photoUri);
+  const paths = getPhotoVariantPaths(payload.creatorId, payload.questId, 'quest');
+  await Promise.all([
+    uploadPhoto(variants.fullUri, paths.fullPath),
+    uploadPhoto(variants.detailUri, paths.detailPath),
+    uploadPhoto(variants.thumbnailUri, paths.thumbnailPath),
+  ]);
 
   const { error } = await supabase.from('quests').insert({
     id: payload.questId,
@@ -30,7 +35,9 @@ export async function syncCreateQuest(payload: {
     mode: payload.mode,
     journey_id: payload.journeyId,
     description: payload.description,
-    photo_path: photoPath,
+    photo_path: paths.detailPath,
+    photo_full_path: paths.fullPath,
+    photo_thumbnail_path: paths.thumbnailPath,
     location_lat: payload.locationLat,
     location_lng: payload.locationLng,
     ...(payload.createdAt ? { created_at: payload.createdAt } : {}),
@@ -48,13 +55,19 @@ export async function syncCompleteQuest(payload: {
   photoUri: string;
   completedAt?: string;
 }): Promise<void> {
-  const compressedUri = await compressPhoto(payload.photoUri);
-  const photoPath = `${payload.userId}/${payload.questId}/completion.jpg`;
-  await uploadPhoto(compressedUri, photoPath);
+  const variants = await createPhotoVariants(payload.photoUri);
+  const paths = getPhotoVariantPaths(payload.userId, payload.questId, 'completion');
+  await Promise.all([
+    uploadPhoto(variants.fullUri, paths.fullPath),
+    uploadPhoto(variants.detailUri, paths.detailPath),
+    uploadPhoto(variants.thumbnailUri, paths.thumbnailPath),
+  ]);
 
   const { data, error } = await supabase.rpc('complete_quest', {
     p_quest_id: payload.questId,
-    p_photo_path: photoPath,
+    p_photo_path: paths.detailPath,
+    p_photo_full_path: paths.fullPath,
+    p_photo_thumbnail_path: paths.thumbnailPath,
     p_journey_id: payload.journeyId,
   });
 

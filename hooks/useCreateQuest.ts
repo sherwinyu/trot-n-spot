@@ -6,6 +6,7 @@ import { getCurrentLocation } from '@/lib/location';
 import { syncCreateQuest } from '@/lib/sync';
 import { enqueue, isNetworkError } from '@/lib/offline';
 import { Quest } from '@/types/database';
+import { getPhotoVariantPaths } from '@/lib/photoVariants';
 
 export function useCreateQuest() {
   const { user, packs } = useAuth();
@@ -50,6 +51,7 @@ export function useCreateQuest() {
       // Capture GPS now — it works offline and must reflect where the
       // quest was spotted, not where we are when the upload syncs.
       const location = await getCurrentLocation();
+      const photoPaths = getPhotoVariantPaths(user.id, questId, 'quest');
 
       const payload = {
         questId,
@@ -75,10 +77,14 @@ export function useCreateQuest() {
         journey_id: payload.journeyId,
         status: 'active',
         description: payload.description,
-        photo_path: `${user.id}/${questId}/original.jpg`,
+        photo_path: photoPaths.detailPath,
+        photo_full_path: photoPaths.fullPath,
+        photo_thumbnail_path: photoPaths.thumbnailPath,
         location_lat: payload.locationLat,
         location_lng: payload.locationLng,
         completion_photo_path: null,
+        completion_full_path: null,
+        completion_thumbnail_path: null,
         completion_journey_id: null,
         completed_at: null,
         created_at: createdAt,
