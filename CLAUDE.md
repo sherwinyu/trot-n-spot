@@ -1,6 +1,6 @@
 # TrotNSpot (trot-n-spot)
 
-Async scavenger hunt app for couples during dog walks. React Native/Expo + Supabase. (Working title was "Quest" — the Android/iOS app id `com.trotnspot.quest`, URL scheme `quest://`, and dev emails like `test-sherwin@quest.dev` keep that name.)
+Async scavenger hunt app for couples during dog walks. React Native/Expo + Supabase. (Working title was "Quest" — the URL scheme `quest://` and dev emails like `test-sherwin@quest.dev` keep that name. The Android/iOS app id is `xyz.sherwinyu.trotnspot`.)
 
 ## Project Structure
 

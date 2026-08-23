@@ -4,7 +4,7 @@
 # launcher rather than the app. Clear state, then deep-link straight to the
 # Metro bundler (the Android emulator reaches the host at 10.0.2.2:8081) so the
 # client connects deterministically without depending on launcher auto-detect.
-appId: com.trotnspot.quest
+appId: xyz.sherwinyu.trotnspot
 ---
 - launchApp:
     clearState: true

@@ -32,7 +32,7 @@ diverged from the plan:
   007 fixes infinite recursion in the profiles RLS policy; 008 adds table
   grants to `authenticated` (RLS policies alone don't grant access); 009 pins
   `search_path` on SECURITY DEFINER functions (signup was failing via GoTrue).
-- **App renamed** Quest → TrotNSpot (app id `com.trotnspot.quest` and scheme
+- **App renamed** Quest → TrotNSpot (app id `xyz.sherwinyu.trotnspot` and scheme
   `quest://` keep the old name). Dog logo on icon + login screen; dark mode
   supported.
 - **Backend is live**: hosted Supabase project `xbegbjicfgsozazlbysc` — the
@@ -83,7 +83,7 @@ verification on physical devices.
    - `react-native-reanimated` — animations
    - `@expo/vector-icons` — iconography
 3. Configure `app.json` / `app.config.ts`:
-   - Bundle identifiers: `com.trotnspot.quest` (iOS + Android)
+   - Bundle identifiers: `xyz.sherwinyu.trotnspot` (iOS + Android)
    - Set `expo-camera`, `expo-location`, `expo-notifications` permissions with user-facing descriptions
    - Configure `expo-updates` URL
    - Set `newArchEnabled: true`

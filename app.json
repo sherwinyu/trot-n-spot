@@ -14,7 +14,7 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.trotnspot.quest",
+      "bundleIdentifier": "xyz.sherwinyu.trotnspot",
       "infoPlist": {
         "NSCameraUsageDescription": "TrotNSpot needs camera access to photograph things for your partner to find.",
         "NSLocationWhenInUseUsageDescription": "TrotNSpot records your location when you create a quest so you can see where you found things.",
@@ -22,7 +22,7 @@
       }
     },
     "android": {
-      "package": "com.trotnspot.quest",
+      "package": "xyz.sherwinyu.trotnspot",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",

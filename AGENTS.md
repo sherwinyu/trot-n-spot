@@ -269,7 +269,7 @@ maestro record .maestro/full-smoke.yaml --output smoke.mp4  # Record video
 
 **Example flow** (`create-quest.yaml`):
 ```yaml
-appId: com.trotnspot.quest
+appId: xyz.sherwinyu.trotnspot
 ---
 - launchApp
 - tapOn: "Start Walk"
