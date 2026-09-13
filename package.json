@@ -7,13 +7,20 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "test": "jest"
+    "test": "jest",
+    "receipts:setup": "node services/receipts/setup.mjs",
+    "receipts:up": "docker compose --env-file services/receipts/.env -f services/receipts/compose.yaml up --build -d",
+    "receipts:test": "npm test -w @bowl/server",
+    "receipts:typecheck": "npm run typecheck -w @bowl/server",
+    "typecheck": "tsc --noEmit",
+    "groceries:test-ui": "node --import tsx e2e/groceries-smoke.mts"
   },
   "jest": {
     "preset": "jest-expo",
     "testPathIgnorePatterns": [
       "/node_modules/",
-      "/e2e/"
+      "/e2e/",
+      "/services/"
     ],
     "setupFiles": [
       "./jest.setup.js"
@@ -50,7 +57,10 @@
     "react-native-safe-area-context": "~5.6.2",
     "react-native-screens": "~4.23.0",
     "react-native-web": "~0.21.0",
-    "react-native-worklets": "0.7.4"
+    "react-native-worklets": "0.7.4",
+    "@bowl/shared": "1.0.0",
+    "expo-file-system": "~55.0.25",
+    "expo-document-picker": "~55.0.16"
   },
   "devDependencies": {
     "@testing-library/react-native": "13.3.3",
@@ -64,5 +74,9 @@
     "supabase": "^2.109.0",
     "typescript": "~5.9.2"
   },
-  "private": true
+  "private": true,
+  "workspaces": [
+    "packages/receipt-model",
+    "services/receipts"
+  ]
 }

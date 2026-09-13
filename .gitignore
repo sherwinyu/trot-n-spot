@@ -55,3 +55,6 @@ build-output/
 # e2e artifacts
 e2e/screenshots/
 e2e/.storage/
+
+# Receipt service local data
+services/receipts/data/

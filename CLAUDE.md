@@ -6,6 +6,12 @@ Async scavenger hunt app for couples during dog walks. React Native/Expo + Supab
 
 See `MVP_PLAN.md` for full architecture, database schema, and phased build order.
 
+The Groceries tab (SHE-103) lives in `features/groceries`, with shared contracts in
+`packages/receipt-model` and the separate receipt API/worker in `services/receipts`.
+See `docs/groceries.md` for setup, account isolation, and verification commands.
+Receipt photos retain their original bytes; the quest-photo compression rule below
+applies only to quest photos.
+
 ## Tech Stack
 
 - **Client**: React Native + Expo (Expo Router v4, file-based routing)
