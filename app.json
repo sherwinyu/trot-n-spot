@@ -19,9 +19,9 @@
         "usesNonExemptEncryption": false
       },
       "infoPlist": {
-        "NSCameraUsageDescription": "TrotNSpot needs camera access to photograph things for your partner to find.",
+        "NSCameraUsageDescription": "TrotNSpot uses your camera for quest photos and grocery receipts.",
         "NSLocationWhenInUseUsageDescription": "TrotNSpot records your location when you create a quest so you can see where you found things.",
-        "NSPhotoLibraryUsageDescription": "TrotNSpot needs photo library access to select photos for quests."
+        "NSPhotoLibraryUsageDescription": "TrotNSpot uses your photo library to select quest photos and grocery receipts."
       }
     },
     "android": {
@@ -51,7 +51,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "TrotNSpot needs camera access to photograph things for your partner to find."
+          "cameraPermission": "TrotNSpot uses your camera for quest photos and grocery receipts."
         }
       ],
       [
@@ -64,7 +64,8 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "TrotNSpot needs photo library access to select photos for quests."
+          "photosPermission": "TrotNSpot uses your photo library to select quest photos and grocery receipts.",
+          "cameraPermission": "TrotNSpot uses your camera for quest photos and grocery receipts."
         }
       ],
       [
