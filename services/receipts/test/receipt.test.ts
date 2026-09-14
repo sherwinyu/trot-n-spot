@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { PGlite } from '@electric-sql/pglite';
+import { createTestDatabase, userA, userB } from './database.ts';
+import { receiptDb } from '../src/db.ts';
 import sharp from 'sharp';
 import {
   extractionSchema,
@@ -54,17 +55,12 @@ export const fixture: Extraction = {
 };
 const token = 'testing-only-access-token-123456789';
 async function setup() {
-  const pg = new PGlite();
-  await pg.exec(
-    await readFile(new URL('../src/schema.sql', import.meta.url), 'utf8'),
-  );
-  const wrap = (client: any): DB => ({
-    query: (sql, params) => client.query(sql, params),
-    transaction: (fn) => client.transaction((tx: any) => fn(wrap(tx))),
-  });
-  const db = wrap(pg),
-    files = new Map<string, Buffer>();
+  const { pg, raw, db } = await createTestDatabase();
+  const files = new Map<string, Buffer>();
   const storage: Storage = {
+    async signedUrl(key) {
+      return `data:image/jpeg;base64,${files.get(key)!.toString('base64')}`;
+    },
     async put(key, data) {
       files.set(key, data);
     },
@@ -74,14 +70,16 @@ async function setup() {
       return data;
     },
   };
-  const app = buildApp(db, storage, token);
+  const app = buildApp(db, storage, async (value) =>
+    value === token ? userA : value === 'bob-token' ? userB : null,
+  );
   const headers = { authorization: `Bearer ${token}` };
   const image = await sharp({
     create: { width: 40, height: 80, channels: 3, background: '#fff' },
   })
     .png()
     .toBuffer();
-  async function upload(id = randomUUID()) {
+  async function upload(id = randomUUID(), accessToken = token) {
     const boundary = 'test-boundary';
     const body = Buffer.concat([
       Buffer.from(
@@ -96,7 +94,7 @@ async function setup() {
         method: 'POST',
         url: '/receipts',
         headers: {
-          ...headers,
+          authorization: `Bearer ${accessToken}`,
           'idempotency-key': id,
           'content-type': `multipart/form-data; boundary=${boundary}`,
         },
@@ -106,6 +104,7 @@ async function setup() {
   }
   return {
     pg,
+    raw,
     db,
     storage,
     files,
@@ -410,6 +409,168 @@ test('analytics exclude unknown currency, convert produce units, and separate in
           (1 + 2.20462262185 + 1 / 16 + 0.00220462262185),
       ) < 1e-7,
     );
+  } finally {
+    await t.close();
+  }
+});
+
+test('Supabase owners are isolated across API reads, writes, analytics and image URLs', async () => {
+  const t = await setup();
+  const bobHeaders = { authorization: 'Bearer bob-token' };
+  try {
+    const { id, result } = await t.upload();
+    assert.equal(result.statusCode, 202, result.body);
+    await processOne(t.db, t.storage, async () => ({
+      data: fixture,
+      raw: fixture,
+    }));
+    assert.ok([...t.files.keys()][0].startsWith(`${userA}/${id}/`));
+    for (const path of [
+      `/receipts/${id}`,
+      `/receipts/${id}/image`,
+      `/receipts/${id}/image-url`,
+    ]) {
+      assert.equal(
+        (await t.app.inject({ url: path, headers: bobHeaders })).statusCode,
+        404,
+        path,
+      );
+    }
+    for (const method of ['PATCH', 'POST'] as const) {
+      const response = await t.app.inject({
+        method,
+        url: `/receipts/${id}${method === 'POST' ? '/reprocess' : ''}`,
+        headers: bobHeaders,
+        payload: { revision: 1, data: fixture },
+      });
+      assert.equal(response.statusCode, 404, response.body);
+    }
+    assert.deepEqual(
+      (await t.app.inject({ url: '/receipts', headers: bobHeaders })).json()
+        .receipts,
+      [],
+    );
+    assert.equal(
+      (await t.app.inject({ url: '/stats', headers: bobHeaders })).json()
+        .spend_cents,
+      0,
+    );
+    const stats = (
+      await t.app.inject({ url: '/stats', headers: t.headers })
+    ).json();
+    const history = await t.app.inject({
+      url: `/products/history?key=${encodeURIComponent(stats.products[0].key)}`,
+      headers: bobHeaders,
+    });
+    assert.deepEqual(history.json().observations, []);
+    assert.equal((await t.upload(id, 'bob-token')).result.statusCode, 409);
+    assert.equal(
+      (
+        await t.app.inject({
+          url: '/receipts',
+          headers: { authorization: 'Bearer forged' },
+        })
+      ).statusCode,
+      401,
+    );
+    assert.equal(
+      (
+        await t.app.inject({
+          url: `/receipts/${id}/image-url`,
+          headers: t.headers,
+        })
+      ).statusCode,
+      200,
+    );
+    // Alternate users through the same database adapter: SET LOCAL must never leak.
+    const bob = receiptDb(t.db, userB),
+      alice = receiptDb(t.db, userA);
+    assert.equal((await bob.query('SELECT * FROM receipts')).rows.length, 0);
+    assert.equal((await alice.query('SELECT * FROM receipts')).rows.length, 1);
+    assert.equal(
+      (await bob.query('SELECT * FROM receipt_line_items')).rows.length,
+      0,
+    );
+    assert.equal(
+      (await bob.query('SELECT * FROM extraction_attempts')).rows.length,
+      0,
+    );
+    await assert.rejects(
+      () =>
+        alice.query('UPDATE receipts SET user_id=$1 WHERE id=$2', [userB, id]),
+      /row-level security/,
+    );
+    await assert.rejects(
+      () => bob.query('INSERT INTO jobs(receipt_id) VALUES($1)', [id]),
+      /row-level security/,
+    );
+    // Database RLS is active, not just API-level filtering.
+    assert.equal(
+      (
+        await t.raw.query(
+          "SELECT count(*)::int AS n FROM pg_tables WHERE schemaname='groceries' AND rowsecurity",
+        )
+      ).rows[0].n,
+      4,
+    );
+  } finally {
+    await t.close();
+  }
+});
+test('Storage RLS restricts originals to their owner; client roles cannot forge receipt rows', async () => {
+  const t = await setup();
+  try {
+    await t.raw.query(
+      "INSERT INTO storage.objects(bucket_id,name) VALUES ('grocery-receipts',$1),('grocery-receipts',$2)",
+      [`${userA}/a/photo`, `${userB}/b/photo`],
+    );
+    for (const user of [userA, userB]) {
+      await t.raw.transaction(async (tx) => {
+        await tx.query('SET LOCAL ROLE authenticated');
+        await tx.query("SELECT set_config('request.jwt.claims',$1,true)", [
+          JSON.stringify({ sub: user }),
+        ]);
+        const { rows } = await tx.query(
+          "SELECT name FROM storage.objects WHERE bucket_id='grocery-receipts'",
+        );
+        assert.equal(rows.length, 1);
+        assert.ok(rows[0].name.startsWith(user));
+      });
+    }
+    await assert.rejects(
+      () =>
+        t.raw.transaction(async (tx) => {
+          await tx.query('SET LOCAL ROLE authenticated');
+          await tx.query("SELECT set_config('request.jwt.claims',$1,true)", [
+            JSON.stringify({ sub: userA }),
+          ]);
+          await tx.query(
+            "INSERT INTO groceries.receipts(id,image_key,image_mime,image_sha256) VALUES(gen_random_uuid(),'forged','image/png','fake')",
+          );
+        }),
+      /permission denied/,
+    );
+    await assert.rejects(
+      () =>
+        t.raw.transaction(async (tx) => {
+          await tx.query('SET LOCAL ROLE authenticated');
+          await tx.query("SELECT set_config('request.jwt.claims',$1,true)", [
+            JSON.stringify({ sub: userA }),
+          ]);
+          await tx.query(
+            "INSERT INTO storage.objects(bucket_id,name) VALUES('grocery-receipts',$1)",
+            [`${userA}/forged/photo`],
+          );
+        }),
+      /row-level security/,
+    );
+    const {
+      rows: [bucket],
+    } = await t.raw.query(
+      "SELECT * FROM storage.buckets WHERE id='grocery-receipts'",
+    );
+    assert.equal(bucket.public, false);
+    assert.equal(Number(bucket.file_size_limit), 26214400);
   } finally {
     await t.close();
   }

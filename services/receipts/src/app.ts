@@ -2,11 +2,18 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import multipart from '@fastify/multipart';
 import rateLimit from '@fastify/rate-limit';
-import { createHash, timingSafeEqual } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import sharp from 'sharp';
 import { z } from 'zod';
 import { extractionSchema, statuses } from '@bowl/shared';
-import type { DB } from './db.ts';
+import { receiptDb, type DB } from './db.ts';
+import type { Authenticate } from './auth.ts';
+declare module 'fastify' {
+  interface FastifyRequest {
+    receiptDb: DB;
+    receiptUserId: string;
+  }
+}
 import type { Storage } from './storage.ts';
 import { detail, persist, receiptColumns } from './receipts.ts';
 import { stats, observations } from './analytics.ts';
@@ -24,11 +31,9 @@ const params = z.object({ id: uuid });
 export function buildApp(
   db: DB,
   storage: Storage,
-  token: string,
+  authenticate: Authenticate,
   origins: string[] = [],
 ) {
-  if (token.length < 24)
-    throw new Error('APP_TOKEN must contain at least 24 characters.');
   const app = Fastify({
     logger: { redact: ['req.headers.authorization'] },
     bodyLimit: 2 * 1024 * 1024,
@@ -38,14 +43,18 @@ export function buildApp(
     limits: { fileSize: 25 * 1024 * 1024, files: 1, fields: 0 },
   });
   app.register(rateLimit, { max: 300, timeWindow: '1 minute' });
+  app.decorateRequest('receiptDb');
+  app.decorateRequest('receiptUserId', '');
   app.addHook('onRequest', async (req, reply) => {
     if (req.method === 'OPTIONS' || req.url === '/health') return;
-    const supplied = createHash('sha256')
-      .update(req.headers.authorization ?? '')
-      .digest();
-    const expected = createHash('sha256').update(`Bearer ${token}`).digest();
-    if (!timingSafeEqual(supplied, expected))
-      return reply.code(401).send({ error: 'Invalid app access token' });
+    const match = /^Bearer (\S+)$/i.exec(req.headers.authorization ?? '');
+    const userId = match ? await authenticate(match[1]) : null;
+    if (!userId || !uuid.safeParse(userId).success)
+      return reply
+        .code(401)
+        .send({ error: 'Sign in to Trot n Spot to access your receipts.' });
+    req.receiptUserId = userId;
+    req.receiptDb = receiptDb(db, userId);
   });
   app.setErrorHandler((error, req, reply) => {
     if (error instanceof z.ZodError)
@@ -68,6 +77,7 @@ export function buildApp(
     return { ok: true };
   });
   app.get('/receipts', async (req) => {
+    const db = req.receiptDb;
     const query = z
       .object({
         status: z.enum(statuses).optional(),
@@ -94,6 +104,7 @@ export function buildApp(
     };
   });
   app.post('/receipts', async (req, reply) => {
+    const db = req.receiptDb;
     const id = uuid.parse(req.headers['idempotency-key']);
     const file = await req.file();
     if (!file) throw new HttpError(400, 'Attach one receipt image.');
@@ -125,7 +136,7 @@ export function buildApp(
         'Unsupported receipt image format. Use JPEG, PNG, WebP, or HEIC.',
       );
     const hash = createHash('sha256').update(buffer).digest('hex');
-    const key = `${id}-${hash}`;
+    const key = `${req.receiptUserId}/${id}/${hash}`;
     // Content-addressed key means concurrent retries can never overwrite another original.
     await storage.put(key, buffer, mime);
     await db.transaction(async (tx) => {
@@ -141,7 +152,7 @@ export function buildApp(
         } = await tx.query('SELECT image_sha256 FROM receipts WHERE id=$1', [
           id,
         ]);
-        if (existing.image_sha256 !== hash)
+        if (!existing || existing.image_sha256 !== hash)
           throw new HttpError(
             409,
             'This upload ID belongs to a different image.',
@@ -151,12 +162,34 @@ export function buildApp(
     return reply.code(202).send({ id, status: (await detail(db, id))!.status });
   });
   app.get('/receipts/:id', async (req) => {
+    const db = req.receiptDb;
     const { id } = params.parse(req.params);
     const receipt = await detail(db, id);
     if (!receipt) throw new HttpError(404, 'Receipt not found');
     return receipt;
   });
+  app.get('/receipts/:id/image-url', async (req) => {
+    const { id } = params.parse(req.params);
+    const {
+      rows: [receipt],
+    } = await req.receiptDb.query(
+      'SELECT image_key FROM receipts WHERE id=$1',
+      [id],
+    );
+    if (!receipt) throw new HttpError(404, 'Receipt not found');
+    const key = `${receipt.image_key}-preview.jpg`;
+    const preview = await sharp(await storage.get(receipt.image_key), {
+      limitInputPixels: 80_000_000,
+    })
+      .rotate()
+      .resize({ width: 1600, withoutEnlargement: true })
+      .jpeg({ quality: 85 })
+      .toBuffer();
+    await storage.put(key, preview, 'image/jpeg');
+    return { url: await storage.signedUrl(key) };
+  });
   app.get('/receipts/:id/image', async (req, reply) => {
+    const db = req.receiptDb;
     const { id } = params.parse(req.params);
     const {
       rows: [receipt],
@@ -185,6 +218,7 @@ export function buildApp(
       : reply.type(receipt.image_mime).send(image);
   });
   app.patch('/receipts/:id', async (req) => {
+    const db = req.receiptDb;
     const { id } = params.parse(req.params);
     const { revision, data } = z
       .object({
@@ -208,6 +242,7 @@ export function buildApp(
     return detail(db, id);
   });
   app.post('/receipts/:id/reprocess', async (req, reply) => {
+    const db = req.receiptDb;
     const { id } = params.parse(req.params);
     const { revision } = z
       .object({ revision: z.number().int().nonnegative() })
@@ -234,12 +269,14 @@ export function buildApp(
     return reply.code(202).send({ id, status: 'pending' });
   });
   app.get('/stats', async (req) => {
+    const db = req.receiptDb;
     const { period } = z
       .object({ period: z.enum(['week', 'month', 'year']).default('month') })
       .parse(req.query);
     return stats(db, period);
   });
   app.get('/products/history', async (req) => {
+    const db = req.receiptDb;
     const { key } = z
       .object({ key: z.string().min(1).max(3000) })
       .parse(req.query);

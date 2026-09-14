@@ -30,7 +30,7 @@ export function ReceiptView({
   onChange: () => void;
   demo: boolean;
 }) {
-  const { api, connection, imageUri } = useReceiptRuntime();
+  const { api, imageUri } = useReceiptRuntime();
   const [editing, setEditing] = useState(false),
     [raw, setRaw] = useState(false),
     [photo, setPhoto] = useState<string>(),
@@ -39,20 +39,24 @@ export function ReceiptView({
     [busy, setBusy] = useState(false),
     [confirm, setConfirm] = useState(false);
   useEffect(() => {
-    let alive = true,
-      url: string | undefined;
-    if (!demo)
-      imageUri(receipt.id)
-        .then((u) => {
-          url = u;
-          if (alive) setPhoto(u);
-        })
-        .catch((e) => {
-          if (alive) setError(e.message);
-        });
+    let alive = true;
+    setPhoto(undefined);
+    const refreshPhoto = () => {
+      if (!demo)
+        void imageUri(receipt.id)
+          .then((u) => {
+            if (alive) setPhoto(u);
+          })
+          .catch((e) => {
+            if (alive) setError(e.message);
+          });
+    };
+    refreshPhoto();
+    // Renew the five-minute private URL while this receipt is open.
+    const timer = setInterval(refreshPhoto, 240_000);
     return () => {
       alive = false;
-      if (url && Platform.OS === 'web') URL.revokeObjectURL(url);
+      clearInterval(timer);
     };
   }, [receipt.id, demo]);
   if (editing)
@@ -125,10 +129,6 @@ export function ReceiptView({
             accessibilityLabel="Receipt photograph"
             source={{
               uri: photo,
-              headers:
-                Platform.OS === 'web'
-                  ? undefined
-                  : { Authorization: `Bearer ${connection().token}` },
             }}
             resizeMode="contain"
             style={{ height: 250, width: '100%', backgroundColor: '#F2F1E9' }}
@@ -272,10 +272,6 @@ export function ReceiptView({
             <Image
               source={{
                 uri: photo,
-                headers:
-                  Platform.OS === 'web'
-                    ? undefined
-                    : { Authorization: `Bearer ${connection().token}` },
               }}
               resizeMode="contain"
               style={{ width: '100%', height: 1200 }}

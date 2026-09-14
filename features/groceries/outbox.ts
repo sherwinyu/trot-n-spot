@@ -201,7 +201,7 @@ export function createReceiptOutbox(client: ReceiptClient, userId: string) {
     }
   }
   async function drain() {
-    if (running || !connection().token || !client.isActive()) return;
+    if (running || !connection().url || !client.isActive()) return;
     running = true;
     try {
       while (client.isActive()) {

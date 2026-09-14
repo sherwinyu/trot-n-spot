@@ -1,46 +1,54 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
-import {
-  S3Client,
-  PutObjectCommand,
-  GetObjectCommand,
-} from '@aws-sdk/client-s3';
+import { createClient } from '@supabase/supabase-js';
 import type { Config } from './config.ts';
 export interface Storage {
   put(key: string, data: Buffer, mime: string): Promise<void>;
   get(key: string): Promise<Buffer>;
+  signedUrl(key: string): Promise<string>;
 }
 export function storage(config: Config): Storage {
-  if (config.STORAGE_DRIVER === 'local')
-    return {
-      async put(key, data) {
-        await mkdir(config.STORAGE_DIR, { recursive: true });
-        await writeFile(join(config.STORAGE_DIR, key), data);
-      },
-      get: (key) => readFile(join(config.STORAGE_DIR, key)),
-    };
-  const client = new S3Client({
-    region: config.S3_REGION,
-    endpoint: config.S3_ENDPOINT,
-    forcePathStyle: !!config.S3_ENDPOINT,
-  });
+  const client = createClient(
+    config.SUPABASE_URL,
+    config.SUPABASE_SERVICE_ROLE_KEY,
+    {
+      auth: { persistSession: false, autoRefreshToken: false },
+    },
+  );
+  const bucket = client.storage.from('grocery-receipts');
   return {
     async put(key, data, mime) {
-      await client.send(
-        new PutObjectCommand({
-          Bucket: config.S3_BUCKET,
-          Key: key,
-          Body: data,
-          ContentType: mime,
-        }),
-      );
+      // Content-addressed keys + no upsert keep original objects immutable.
+      const { error } = await bucket.upload(key, data, {
+        contentType: mime,
+        upsert: false,
+      });
+      if (
+        error &&
+        !['409', '400'].includes(
+          String((error as { statusCode?: string }).statusCode),
+        )
+      )
+        throw error;
+      if (error) {
+        // Storage reports duplicate objects as 400/409. Verify the bytes before accepting a retry.
+        const { data: existing, error: readError } = await bucket.download(key);
+        if (
+          readError ||
+          !existing ||
+          !Buffer.from(await existing.arrayBuffer()).equals(data)
+        )
+          throw error;
+      }
     },
     async get(key) {
-      const result = await client.send(
-        new GetObjectCommand({ Bucket: config.S3_BUCKET, Key: key }),
-      );
-      if (!result.Body) throw new Error('Image missing');
-      return Buffer.from(await result.Body.transformToByteArray());
+      const { data, error } = await bucket.download(key);
+      if (error || !data) throw error ?? new Error('Receipt image missing');
+      return Buffer.from(await data.arrayBuffer());
+    },
+    async signedUrl(key) {
+      const { data, error } = await bucket.createSignedUrl(key, 300);
+      if (error || !data)
+        throw error ?? new Error('Could not open receipt image');
+      return data.signedUrl;
     },
   };
 }

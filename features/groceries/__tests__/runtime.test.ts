@@ -1,16 +1,14 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as SecureStore from 'expo-secure-store';
+import { supabase } from '@/lib/supabase';
 import { createReceiptClient } from '../api';
 import { createReceiptOutbox } from '../outbox';
 
-jest.mock('expo-secure-store', () => {
-  const values = new Map<string, string>();
-  return {
-    getItemAsync: jest.fn(async (key: string) => values.get(key) ?? null),
-    setItemAsync: jest.fn(async (key: string, value: string) => {
-      values.set(key, value);
-    }),
-  };
+jest.mock('@/lib/supabase', () => ({
+  supabase: { auth: { getSession: jest.fn() } },
+}));
+const session = (id: string, token = 'session-token') => ({
+  data: { session: { user: { id }, access_token: token } },
+  error: null,
 });
 jest.mock('expo-file-system/legacy', () => ({
   documentDirectory: 'file:///documents/',
@@ -27,19 +25,14 @@ beforeEach(async () => {
   await AsyncStorage.clear();
   jest.clearAllMocks();
 });
-test('credentials and receipt queues stay isolated between Trot n Spot accounts', async () => {
+test('server settings and receipt queues stay isolated between Trot n Spot accounts', async () => {
   const alice = createReceiptClient('alice'),
     bob = createReceiptClient('bob');
   await alice.saveConnection({
     url: 'https://receipts.example',
-    token: 'alice-private-token-123456789',
   });
   await bob.loadConnection();
-  expect(bob.connection().token).toBe('');
-  expect(SecureStore.setItemAsync).toHaveBeenCalledWith(
-    'groceries.alice.token',
-    'alice-private-token-123456789',
-  );
+  expect(bob.connection().url).toBe('');
   const a = createReceiptOutbox(alice, 'alice'),
     b = createReceiptOutbox(bob, 'bob');
   await a.initOutbox();
@@ -57,7 +50,6 @@ test('disposing a feature session stops requests and preserves its queued origin
   const client = createReceiptClient('logout-user');
   await client.saveConnection({
     url: 'https://receipts.example',
-    token: 'private-token-123456789012345',
   });
   const queue = createReceiptOutbox(client, 'logout-user');
   await queue.initOutbox();
@@ -69,6 +61,10 @@ test('disposing a feature session stops requests and preserves its queued origin
 });
 test('sign-out aborts an in-flight receipt request', async () => {
   const client = createReceiptClient('inflight-user');
+  await client.saveConnection({ url: 'https://receipts.example' });
+  jest
+    .mocked(supabase.auth.getSession)
+    .mockResolvedValue(session('inflight-user') as any);
   const originalFetch = global.fetch;
   let signal: AbortSignal | undefined;
   global.fetch = jest.fn(
@@ -80,10 +76,48 @@ test('sign-out aborts an in-flight receipt request', async () => {
   );
   try {
     const request = client.api('/receipts');
+    await Promise.resolve();
     client.dispose();
     await expect(request).rejects.toThrow('aborted');
     expect(signal?.aborted).toBe(true);
   } finally {
     global.fetch = originalFetch;
+  }
+});
+
+test('requests use refreshed Trot n Spot tokens and reject an account switch before upload', async () => {
+  const client = createReceiptClient('alice');
+  await client.saveConnection({ url: 'https://receipts.example' });
+  const originalFetch = global.fetch;
+  const fetchMock = jest.fn(async () => ({
+    ok: true,
+    json: async () => ({ receipts: [] }),
+  })) as jest.Mock;
+  global.fetch = fetchMock;
+  try {
+    jest
+      .mocked(supabase.auth.getSession)
+      .mockResolvedValue(session('alice', 'first') as any);
+    await client.api('/receipts');
+    expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe(
+      'Bearer first',
+    );
+    jest
+      .mocked(supabase.auth.getSession)
+      .mockResolvedValue(session('alice', 'refreshed') as any);
+    await client.api('/receipts');
+    expect(fetchMock.mock.calls[1][1].headers.Authorization).toBe(
+      'Bearer refreshed',
+    );
+    jest
+      .mocked(supabase.auth.getSession)
+      .mockResolvedValue(session('bob') as any);
+    await expect(client.api('/receipts', { method: 'POST' })).rejects.toThrow(
+      'Sign in',
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  } finally {
+    global.fetch = originalFetch;
+    client.dispose();
   }
 });

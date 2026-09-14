@@ -1,62 +1,59 @@
 # Groceries in Trot n Spot
 
-Implements [SHE-103](https://linear.app/sherwin/issue/SHE-103/build-berkeley-bowl-receipt-tracker-scan-receipts-personal-grocery) as a **Groceries** tab beside Quests, Create, History, and Profile. The tab has Explore, Scan, and Receipts views, with inline receipt/product details. It uses the existing Expo SDK 55, app identity, auth gate, pack onboarding, and outer navigation.
+Implements [SHE-103](https://linear.app/sherwin/issue/SHE-103/build-berkeley-bowl-receipt-tracker-scan-receipts-personal-grocery) as the Groceries tab, with Explore, Scan, Receipts, receipt editing, and product history.
 
-## Try it
+## Storage and identity
 
-1. Run Trot n Spot normally, sign in, and open **Groceries**.
-2. Choose **Explore with sample data** to preview immediately, or connect a receipt backend below.
-3. Use **Scan** for camera capture, multiple photo-library images, or image files. Confirm the photos and save them. After upload completes, the server reads receipts independently of the phone.
+Receipts use **the same Supabase project and Auth users as Trot n Spot**:
 
-The sample data is synthetic and never sent to the server. The receipt tracker retains its own backend connection; Trot n Spot's Supabase project continues to handle quests and identity. **This change does not deploy the receipt backend or migrate receipts into Supabase.**
+- Postgres: `groceries.receipts`, `receipt_line_items`, `extraction_attempts`, and `jobs`.
+- Storage: private `grocery-receipts` bucket; originals are keyed by `<user-id>/<receipt-id>/<sha256>`. Original bytes are preserved; JPEG previews are stored alongside them.
+- Auth: the app gets its current Supabase session for every API request. The API validates that token against the project's Auth server with `getUser(token)`. There is no receipt vault token or second sign-in.
+- Isolation: RLS on all four tables. API queries run as a non-login `receipts_api` role with transaction-local verified user claims. Claims, role, and schema settings reset after every transaction, including failures. The worker uses the privileged database connection to process jobs across users.
+- Clients have read-only table grants and owner-only Storage reads. They cannot write extracted fields, jobs, or original objects directly. The `groceries` schema does not need to be added to the exposed Data API schemas.
+- Pack membership does not grant access to grocery receipts.
 
-## Start the included receipt backend
+The Node API and extraction worker still need to run somewhere. Supabase replaces the separate database, local image volume, and S3 configuration; this change does not move processing into Edge Functions. The worker retains the existing durable queue, leases, retries, and late-result fencing, and continues processing after the phone closes.
 
-From the repository root:
+## Setup
 
-```bash
-npm ci
-npm run receipts:setup
-# Add OPENAI_API_KEY to services/receipts/.env
-npm run receipts:up
-```
+1. Apply the new `groceries_supabase_store` migration through Trot n Spot's normal Supabase migration workflow. For a linked project, review the pending migrations before `npx supabase db push`. This creates the tables, restricted API role, private bucket, and policies. **Do not run migrations automatically when starting the API.** The PR does not apply migrations to the hosted project.
+2. Run `npm run receipts:setup`. It creates `services/receipts/.env` without overwriting an existing file. Fill in:
 
-This starts a separate Postgres database, migrations, authenticated API, and asynchronous extraction worker using Docker Compose. Original images use a persistent volume by default. Both API and worker can instead use an existing private S3-compatible bucket via `STORAGE_DRIVER=s3` and the S3/AWS settings in the service environment file.
+| Server variable             | Value                                                                                                                                |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `SUPABASE_URL`              | Same project URL as the app                                                                                                          |
+| `SUPABASE_SERVICE_ROLE_KEY` | Project service-role key; server only, used for Auth validation and private Storage                                                  |
+| `DATABASE_URL`              | Supabase Postgres connection string for the `postgres` login, with TLS; use the **Session pooler** URI from Connect for an IPv4 host |
+| `OPENAI_API_KEY`            | Server-only extraction key                                                                                                           |
+| `OPENAI_MODEL`              | Optional; defaults to `gpt-4.1-mini`                                                                                                 |
+| `PORT`                      | Optional; defaults to `3001`                                                                                                         |
+| `CORS_ORIGINS`              | Comma-separated web app origins; local defaults are ports 8081 and 8082                                                              |
 
-In the Groceries connection screen, enter:
+3. Start the API and worker with `npm run receipts:up` on a Docker host. Compose starts only those two processes; there is no second Postgres container or image volume. Alternatively run the service `dev` and `worker` scripts in separate terminals. The database login must be able to `SET ROLE receipts_api`; the migration grants this to `postgres`.
+4. Set `EXPO_PUBLIC_RECEIPTS_API_URL` to the API's HTTPS URL when building the app. The Groceries tab then connects automatically with the existing Trot n Spot sign-in. Without that variable, enter the API URL under Groceries → Connection. No token field is shown.
 
-- Server address: `http://YOUR_COMPUTER_LAN_IP:3001` for a phone on the same Wi-Fi; `http://10.0.2.2:3001` for the Android emulator; `http://localhost:3001` for web/iOS simulator. Use HTTPS for a remote server and standalone phone builds.
-- App access token: the generated `APP_TOKEN` in `services/receipts/.env`. The vision API key stays on the server.
+The existing app variables remain `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`, and the release login flags. Never expose database credentials, the service-role key, or the OpenAI key through `EXPO_PUBLIC_*`.
 
-`EXPO_PUBLIC_RECEIPTS_API_URL` can set the default address at build time. Do not put tokens or vision keys in public environment variables. For hosted web, include its exact origin in the service's `CORS_ORIGINS`.
+For local development, point both app and service at the same local Supabase instance. A phone needs the API host's LAN address; Android emulator uses `http://10.0.2.2:3001`. `localhost` on the phone means the phone itself. A Docker container must use a Supabase address reachable from inside that container, not its own loopback address.
 
-If you already deployed the standalone Bowl Pocket API from the earlier implementation, connect its URL/token here; the API contract is unchanged. Existing server data remains usable. Local-only queues from the separate app are not automatically imported.
+Connection references: [Supabase database connections](https://supabase.com/docs/guides/database/connecting-to-postgres), [Storage access control](https://supabase.com/docs/guides/storage/security/access-control), [Auth getUser](https://supabase.com/docs/reference/javascript/auth-getuser).
 
-## Account boundaries and lifecycle
+## Capture and processing
 
-- The tab is behind Trot n Spot's normal sign-in/pack gate. It does not share receipt data with packmates.
-- Backend URL, receipt token, and upload queue are namespaced by the current Supabase user ID. Native credentials use SecureStore; web credentials use session storage.
-- Native queued images are copied to `receipts/<user-id>/` within app documents. Web uses IndexedDB. Receipt IDs remain stable across upload retries and app restarts.
-- Account changes remount the feature, clearing rendered receipt and preview state. Sign-out aborts in-flight API requests and stops that account's queue from draining. Its pending images remain available when the same user returns.
-- Receipt polling pauses when another Trot n Spot tab is focused; Android back handling is active only while Groceries is focused. Uploads already in progress can continue when switching tabs while signed in.
-- Keep the app open until uploads finish. This feature does not claim native OS background uploading. Once accepted by the server, extraction continues even after the app closes.
-- A receipt backend is a single private vault identified by its app token. Two people deliberately entering the same backend token share that vault. This is independent of Trot n Spot pack membership.
+Use Scan to take a photo, select multiple library images, or import image files. Confirm them and save. Pending originals remain in an account-scoped on-device upload queue until accepted by the API. Uploads preserve UUIDs across retries and restarts. Stay in the app until uploads finish; this does not implement OS background uploading. After acceptance, the worker owns processing.
 
-## Source layout
+Sign-out or account changes stop that account's pending requests and queue drain; queued originals remain for that user to resume later. Every request checks that the Supabase session still belongs to the feature's user before sending bytes. Tokens are read fresh so refreshes work without reconnecting. Backend addresses and queued metadata remain per-user; the UI retains no separate receipt credential.
 
-| Path                       | Role                                                              |
-| -------------------------- | ----------------------------------------------------------------- |
-| `app/(tabs)/groceries.tsx` | Auth-aware route; remounts on account change                      |
-| `features/groceries/`      | Receipt UI, per-user connection, upload queue, runtime context    |
-| `packages/receipt-model/`  | Shared Zod contracts, types, integer-cent reconciliation          |
-| `services/receipts/`       | Postgres API, image storage, extraction worker, migrations, tests |
-| `e2e/groceries-smoke.mts`  | Full-app browser navigation and receipt-flow check                |
+Images are displayed via five-minute signed URLs issued only after an owner-scoped receipt lookup; open receipt views renew them every four minutes. A copied signed URL works until expiry, so treat it as a temporary bearer link. The authenticated original-image endpoint still returns the exact original bytes.
 
-The root npm workspace includes the shared contract and server. Trot n Spot's app is still the repository root; no second Expo application or standalone app navigation is included.
+Originals, raw model output, and edit history are retained. Integer-cent reconciliation tolerates a two-cent difference; uncertain receipts remain visible in best-effort analytics. Analytics use USD, convert known produce weights, and group product identities by merchant, code or printed description, and unit.
 
-The backend preserves original image bytes and raw model/edit history. It uses idempotent uploads, transactional line replacement, worker leases with late-result fencing, three attempts with backoff, and a two-cent reconciliation tolerance. Printed line amounts are net of line discounts; receipt-level discounts are additional. Review receipts remain in best-effort analytics with an explicit caveat. Analytics currently use USD and separate product groups by merchant, candidate merchant code (or printed description), and unit.
+## Existing standalone data
 
-## Verification commands
+The earlier standalone Bowl Pocket database is **not automatically imported**. This Supabase schema requires an explicit owner for every receipt. Do not point the new server at the old database or assume old tokens still work. Any real standalone data would need an explicit import that assigns its owner and copies originals into the private bucket. No such live data was accessed or migrated in this change. Old app-token values are ignored; the app now only uses Supabase sessions.
+
+## Verification
 
 ```bash
 npm run typecheck
@@ -64,17 +61,16 @@ npm run receipts:typecheck
 npx jest --ci --runInBand
 npm run receipts:test
 
-# Browser test against local in-process test adapters, never production Supabase:
 EXPO_PUBLIC_SUPABASE_URL=http://localhost:54321 \
 EXPO_PUBLIC_SUPABASE_ANON_KEY=local-test-anon-key \
 npx expo export --platform web
-npx playwright install chromium
 npm run groceries:test-ui
 
-# Native JS/Hermes compilation:
 npx expo export --platform android --platform ios --output-dir test-results/native-export
 ```
 
-The browser smoke test uses the actual Trot n Spot app/router and receipt API with embedded Postgres. Supabase auth/profile responses, image storage, and the vision response are test adapters. It exercises the new tab, sample data, file import, interrupted-upload recovery across reload, receipt editing, analytics, navigation back to Quests/History, and isolation after switching accounts. Screenshots go to `test-results/groceries/`. An existing Chromium can be selected with `BROWSER_EXECUTABLE_PATH`.
+Service tests apply the real receipt migration to embedded Postgres with minimal Supabase Auth/Storage schema stand-ins. They exercise owner RLS, denied owner reassignment, read-only client grants, private Storage policies, cross-account receipt/image/history/edit/reprocess denial, and the existing extraction/retry/reconciliation flows. Auth and Storage adapter tests use the real Supabase SDK against fake HTTP responses; no production credentials or model calls are used.
 
-Physical camera permissions, a signed phone build, live model extraction, Docker startup, and a live S3 bucket still require environment/device validation. The reference Berkeley Bowl image was unavailable; test receipts are synthetic. The additional document-picker native module and updated permission strings require a new development/preview binary when using a custom dev client rather than Expo Go.
+The browser smoke test uses the real app/router/API and embedded Postgres with test Auth/Storage/vision adapters. It verifies sample data, import, interrupted-upload recovery, editing, analytics, navigation, and connecting a second user to the same backend without seeing the first user's receipts. Screenshots go to `test-results/groceries`. An existing Chromium can be selected with `BROWSER_EXECUTABLE_PATH`.
+
+Hosted migration, live Supabase Storage/Auth, real model extraction, physical camera permissions, and a signed phone build require deployment/device validation. The Berkeley Bowl reference image was unavailable; fixtures are explicitly synthetic.

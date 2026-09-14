@@ -2,7 +2,7 @@ import { chromium } from 'playwright';
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { resolve, extname } from 'node:path';
 import assert from 'node:assert/strict';
-import { PGlite } from '@electric-sql/pglite';
+import { createTestDatabase } from '../services/receipts/test/database.ts';
 import sharp from 'sharp';
 import { buildApp } from '../services/receipts/src/app.ts';
 import { processOne } from '../services/receipts/src/worker.ts';
@@ -10,20 +10,12 @@ import type { DB } from '../services/receipts/src/db.ts';
 import type { Extraction } from '@bowl/shared';
 
 // Full UI → real API → embedded Postgres → worker → analytics. Only vision and object storage are injected.
-const pg = new PGlite();
-await pg.exec(
-  await readFile(
-    new URL('../services/receipts/src/schema.sql', import.meta.url),
-    'utf8',
-  ),
-);
-const wrap = (client: any): DB => ({
-  query: (sql, params) => client.query(sql, params),
-  transaction: (fn) => client.transaction((tx: any) => fn(wrap(tx))),
-});
-const db = wrap(pg),
-  files = new Map<string, Buffer>();
+const { pg, db } = await createTestDatabase();
+const files = new Map<string, Buffer>();
 const storage = {
+  async signedUrl(k: string) {
+    return `data:image/jpeg;base64,${files.get(k)!.toString('base64')}`;
+  },
   async put(k: string, b: Buffer) {
     files.set(k, b);
   },
@@ -31,8 +23,17 @@ const storage = {
     return files.get(k)!;
   },
 };
-const token = 'ui-smoke-test-token-never-for-production';
-const app = buildApp(db, storage, token, ['http://localhost:8081']);
+const app = buildApp(
+  db,
+  storage,
+  async (token) =>
+    token === `test-token-${userA.id}`
+      ? userA.id
+      : token === `test-token-${userB.id}`
+        ? userB.id
+        : null,
+  ['http://localhost:8081'],
+);
 const extraction: Extraction = {
   merchant: 'Berkeley Bowl',
   store_location: 'SYNTHETIC TEST',
@@ -167,7 +168,7 @@ const userB = {
 };
 let currentUser = userA;
 const sessionFor = (user: any) => ({
-  access_token: 'test-token',
+  access_token: `test-token-${user.id}`,
   refresh_token: 'test-refresh',
   expires_at: Math.floor(Date.now() / 1000) + 3600,
   expires_in: 3600,
@@ -219,7 +220,6 @@ try {
   await page
     .getByLabel('Server address', { exact: true })
     .fill('http://localhost:3001');
-  await page.getByLabel('App access token', { exact: true }).fill(token);
   await page.getByRole('button', { name: 'Connect', exact: true }).click();
   await page.getByText('Start with one receipt.').waitFor();
   await page.getByRole('button', { name: 'Scan', exact: true }).click();
@@ -275,9 +275,14 @@ try {
   await page.getByRole('tab', { name: /Groceries/ }).click();
   await page.getByRole('button', { name: 'Connect', exact: true }).waitFor();
   assert.equal(
-    await page.getByLabel('App access token', { exact: true }).inputValue(),
-    '',
+    await page.getByLabel('App access token', { exact: true }).count(),
+    0,
   );
+  await page
+    .getByLabel('Server address', { exact: true })
+    .fill('http://localhost:3001');
+  await page.getByRole('button', { name: 'Connect', exact: true }).click();
+  await page.getByText('Start with one receipt.').waitFor();
   await page.screenshot({ path: resolve(screens, 'account-isolation.png') });
   assert.equal(errors.length, 0, errors.join('\n'));
   await writeFile(
