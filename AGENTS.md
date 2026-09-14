@@ -1,3 +1,37 @@
+# Agent workflow and skills
+
+Trot n Spot uses the shared engineering skills in `.agents/skills/`; Claude Code
+loads the same files through `.claude/skills/`. Read the matching skill for the
+task and [skill overrides](docs/agents/skill-overrides.md) before applying it.
+Existing app conventions remain in [CLAUDE.md](CLAUDE.md) and the testing guide below.
+
+## Async Linear workflow
+
+State lives in Linear so work can resume without the original conversation.
+Read [project-state.md](docs/agents/project-state.md) before starting or resuming
+an initiative and [issue-tracker.md](docs/agents/issue-tracker.md) for Trot n Spot's
+project mapping and tool operations.
+
+| Step | Action |
+| --- | --- |
+| Shape | Use `wayfinder` / `grilling`; ask one question at a time with a recommendation. Record numbered decisions in a parent issue checkpoint. |
+| Ticket | Use `to-spec` / `to-tickets`; create self-contained Linear children with native dependencies and `ready-for-agent` labels. |
+| Resume | Use `resume` for a read-only report: compare checkpoints with live issues, PRs, and each repository's main branch. |
+| Claim | For dispatched issue work, post a Claim and move to In Progress before implementation. Assignment alone is not a claim. |
+| Implement | One issue, one branch, one PR into main; see [git workflow](docs/git-workflow.md). |
+| Verify | Publish matching Evidence on the PR and issue: command results, relevant screenshots, residual risk, base SHA. |
+| Checkpoint | Append a compact Checkpoint on the parent (or standalone issue) at the session boundary; `handoff` is temporary conversation context only. |
+
+Use [triage labels](docs/agents/triage-labels.md) for agent/human queues and
+[domain guidance](docs/agents/domain.md) for glossary and ADR discovery.
+`resume` retains a cross-project human queue; an explicit Trot n Spot request
+scopes the report to this project. Cross-project reading is not authorization to
+dispatch work. Honor the user's existing authorization for the current task.
+
+For skill provenance and the full port scope, see
+[skills-port.md](docs/agents/skills-port.md). Verification commands are summarized
+in [docs/testing.md](docs/testing.md); docs-only changes do not require an app build.
+
 # Agent Testing & Verification
 
 Instructions for a long-running code agent (e.g., Claude Code) to build, install, test, and verify the TrotNSpot app — entirely from the CLI. Testing paths, fastest first:
@@ -483,7 +517,7 @@ A `.env` file with `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY
 ### Lint / Test / Build
 
 - **TypeScript**: `npx tsc --noEmit` — no config beyond `tsconfig.json` needed
-- **Jest**: not yet configured (no `jest.config.ts` or test dependencies in `package.json`)
+- **Jest**: `npm test -- --ci --runInBand` — configured in `package.json` with `jest.setup.js`
 - **Lint**: no ESLint configured yet
 - **Build**: see `AGENTS.md` "Build Caching" section above for native APK builds
 

@@ -2,6 +2,13 @@
 
 Async scavenger hunt app for couples during dog walks. React Native/Expo + Supabase. (Working title was "Quest" — the URL scheme `quest://` and dev emails like `test-sherwin@quest.dev` keep that name. The Android/iOS app id is `xyz.sherwinyu.trotnspot`.)
 
+## Shared agent workflow
+
+Read [AGENTS.md](AGENTS.md) for the async Linear workflow and
+[docs/agents/skill-overrides.md](docs/agents/skill-overrides.md) for repository policy.
+Skills in `.claude/skills/` link to the canonical `.agents/skills/` directories.
+Use `resume` to reorient and `checkpoint` to persist initiative state in Linear.
+
 ## Project Structure
 
 See `MVP_PLAN.md` for full architecture, database schema, and phased build order.
