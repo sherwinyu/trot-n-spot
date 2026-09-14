@@ -3,13 +3,9 @@ export function config() {
   return z
     .object({
       DATABASE_URL: z.string().min(1),
-      APP_TOKEN: z.string().min(24),
+      SUPABASE_URL: z.url(),
+      SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
       PORT: z.coerce.number().default(3001),
-      STORAGE_DRIVER: z.enum(['s3', 'local']).default('local'),
-      STORAGE_DIR: z.string().default('./data/images'),
-      S3_BUCKET: z.string().default('receipts'),
-      S3_REGION: z.string().default('us-east-1'),
-      S3_ENDPOINT: z.string().optional(),
       OPENAI_API_KEY: z.string().optional(),
       OPENAI_MODEL: z.string().default('gpt-4.1-mini'),
       CORS_ORIGINS: z

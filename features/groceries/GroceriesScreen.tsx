@@ -130,7 +130,7 @@ function Main() {
   useEffect(() => {
     Promise.all([loadConnection(), initOutbox()])
       .then(([c]) => {
-        setConnected(!!c.token);
+        setConnected(!!c.url);
         void drain();
       })
       .catch((e) => setError(e.message))
@@ -718,14 +718,13 @@ function Setup({
 }) {
   const { api, connection, saveConnection } = useReceiptRuntime();
   const [url, setURL] = useState(connection().url),
-    [token, setToken] = useState(connection().token),
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
   async function save() {
     setBusy(true);
     setError('');
     try {
-      await saveConnection({ url, token });
+      await saveConnection({ url });
       await api('/receipts?limit=1');
       onSaved();
     } catch (e) {
@@ -748,7 +747,7 @@ function Setup({
         </Text>
       </View>
       <Card>
-        <Text style={s.heading}>Connect your receipt vault</Text>
+        <Text style={s.heading}>Connect your grocery journal</Text>
         <Field
           label="Server address"
           value={url}
@@ -758,15 +757,6 @@ function Setup({
           keyboardType="url"
           placeholder="https://your-server.example"
         />
-        <Field
-          label="App access token"
-          value={token}
-          onChangeText={setToken}
-          autoCapitalize="none"
-          autoCorrect={false}
-          secureTextEntry
-          placeholder="Your private access token"
-        />
         {error ? <ErrorBox message={error} /> : null}
         <Button
           label={busy ? 'Connecting…' : 'Connect'}
@@ -774,8 +764,8 @@ function Setup({
           onPress={() => void save()}
         />
         <Text style={s.muted}>
-          Enter your own server address and its app token. Your vision API key
-          stays on the server.
+          Your Trot n Spot sign-in keeps your receipts private. No extra account
+          or access token is needed.
         </Text>
       </Card>
       <Button label="Explore with sample data" secondary onPress={onDemo} />

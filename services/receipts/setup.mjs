@@ -1,24 +1,19 @@
-import { randomBytes } from 'node:crypto';
-import { readFile, writeFile } from 'node:fs/promises';
-const appToken = randomBytes(32).toString('hex'),
-  password = randomBytes(24).toString('hex');
-const template = await readFile(
-  new URL('./.env.example', import.meta.url),
-  'utf8',
-);
-const value = template
-  .replace('APP_TOKEN=GENERATE_WITH_NPM_RUN_SETUP', `APP_TOKEN=${appToken}`)
-  .replaceAll('GENERATE_WITH_NPM_RUN_SETUP', password);
+import { copyFile, chmod, constants } from 'node:fs/promises';
 try {
-  await writeFile(new URL('./.env', import.meta.url), value, {
-    flag: 'wx',
-    mode: 0o600,
-  });
+  const target = new URL('./.env', import.meta.url);
+  await copyFile(
+    new URL('./.env.example', import.meta.url),
+    target,
+    constants.COPYFILE_EXCL,
+  );
+  await chmod(target, 0o600);
   console.log(
-    'Created .env. Add OPENAI_API_KEY, then run npm run receipts:up.',
+    'Created services/receipts/.env. Fill in Supabase and OpenAI credentials; see docs/groceries.md.',
   );
 } catch (error) {
   if (error.code === 'EEXIST')
-    console.log('.env already exists; kept it unchanged.');
+    console.log(
+      '.env already exists; kept unchanged. For the Supabase migration, use the new .env.example fields.',
+    );
   else throw error;
 }

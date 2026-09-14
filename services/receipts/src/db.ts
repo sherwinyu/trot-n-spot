@@ -1,5 +1,4 @@
 import pg from 'pg';
-import { readFile } from 'node:fs/promises';
 
 export interface DB {
   query(
@@ -14,7 +13,7 @@ export function createDb(url: string): DB & { close(): Promise<void> } {
     query: (sql, args) => client.query(sql, args),
     transaction: (fn) => fn(wrap(client)),
   });
-  return {
+  const raw: DB & { close(): Promise<void> } = {
     query: (sql, args) => pool.query(sql, args),
     async transaction(fn) {
       const client = await pool.connect();
@@ -32,9 +31,26 @@ export function createDb(url: string): DB & { close(): Promise<void> } {
     },
     close: () => pool.end(),
   };
+  return { ...receiptDb(raw), close: raw.close };
 }
-export async function migrate(db: DB) {
-  await db.query(
-    await readFile(new URL('./schema.sql', import.meta.url), 'utf8'),
-  );
+
+/** Apply transaction-local settings on every checkout, safe with Supavisor pooling.
+ * No connection or elevated role is held while calling Auth, Storage, or OpenAI.
+ */
+export function receiptDb(db: DB, userId?: string): DB {
+  const transaction: DB['transaction'] = (fn) =>
+    db.transaction(async (tx) => {
+      await tx.query('SET LOCAL search_path = groceries, pg_catalog');
+      if (userId !== undefined) {
+        await tx.query('SET LOCAL ROLE receipts_api');
+        await tx.query("SELECT set_config('request.jwt.claims', $1, true)", [
+          JSON.stringify({ sub: userId, role: 'authenticated' }),
+        ]);
+      }
+      return fn(tx);
+    });
+  return {
+    query: (sql, args) => transaction((tx) => tx.query(sql, args)),
+    transaction,
+  };
 }

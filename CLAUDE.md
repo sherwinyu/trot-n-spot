@@ -7,7 +7,9 @@ Async scavenger hunt app for couples during dog walks. React Native/Expo + Supab
 See `MVP_PLAN.md` for full architecture, database schema, and phased build order.
 
 The Groceries tab (SHE-103) lives in `features/groceries`, with shared contracts in
-`packages/receipt-model` and the separate receipt API/worker in `services/receipts`.
+`packages/receipt-model` and the receipt API/worker in `services/receipts`.
+Receipts use the existing Supabase project: the private `groceries` schema,
+`grocery-receipts` Storage bucket, and Trot n Spot Auth sessions.
 See `docs/groceries.md` for setup, account isolation, and verification commands.
 Receipt photos retain their original bytes; the quest-photo compression rule below
 applies only to quest photos.
