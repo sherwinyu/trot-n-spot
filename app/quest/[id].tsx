@@ -8,8 +8,8 @@ import { useAuth } from '@/hooks/useAuth';
 import { useCompleteQuest } from '@/hooks/useCompleteQuest';
 import { useJourney } from '@/hooks/useJourney';
 import { QUEST_COLUMNS_NO_LOCATION, QuestLists } from '@/hooks/useQuests';
-import { cacheGet } from '@/lib/offline';
-import { findQuestInLists } from '@/lib/questFeed';
+import { cacheGet, getQueue } from '@/lib/offline';
+import { applyPendingMutations, findQuestInLists } from '@/lib/questFeed';
 import { usePackLookups } from '@/providers/AuthProvider';
 import { capturePhoto } from '@/lib/photos';
 import { notify } from '@/lib/notify';
@@ -34,8 +34,13 @@ export default function QuestDetailScreen() {
       // Show the copy from the feed cache first so the detail opens
       // offline; the network fetch below replaces it when it lands.
       if (user) {
-        const cachedLists = await cacheGet<QuestLists>(`quests:${user.id}`);
-        const cached = cachedLists ? findQuestInLists(cachedLists, id) : null;
+        const [cachedLists, queue] = await Promise.all([
+          cacheGet<QuestLists>(`quests:${user.id}`),
+          getQueue(user.id),
+        ]);
+        const cached = cachedLists
+          ? findQuestInLists(applyPendingMutations(cachedLists, queue, user.id), id)
+          : null;
         if (cached) {
           setQuest((prev) => prev ?? cached);
           setLoading(false);

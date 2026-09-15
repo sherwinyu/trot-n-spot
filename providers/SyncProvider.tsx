@@ -29,15 +29,17 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   const [pendingCount, setPendingCount] = useState(0);
   const [isOnline, setIsOnline] = useState<boolean | null>(null);
 
+  const userId = session?.user.id;
+
   const refreshPendingCount = useCallback(async () => {
-    const queue = await getQueue();
+    const queue = userId ? await getQueue(userId) : [];
     setPendingCount(queue.length);
-  }, []);
+  }, [userId]);
 
   const flush = useCallback(async () => {
-    await flushPendingMutations();
+    if (userId) await flushPendingMutations(userId);
     await refreshPendingCount();
-  }, [refreshPendingCount]);
+  }, [userId, refreshPendingCount]);
 
   useEffect(() => {
     Network.getNetworkStateAsync()

@@ -82,6 +82,6 @@ const handlers: FlushHandlers = {
   complete_quest: syncCompleteQuest,
 };
 
-export function flushPendingMutations(): Promise<number> {
-  return flushQueue(handlers);
+export function flushPendingMutations(userId: string): Promise<number> {
+  return flushQueue(handlers, userId);
 }

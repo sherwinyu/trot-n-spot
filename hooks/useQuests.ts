@@ -42,8 +42,9 @@ export function useQuests() {
 
   // Queued creates/completes overlay the feed until they sync.
   useEffect(() => {
-    getQueue().then(setQueue);
-  }, [pendingCount]);
+    if (!user) return;
+    getQueue(user.id).then(setQueue);
+  }, [user, pendingCount]);
 
   const refresh = useCallback(async () => {
     if (!user) return;
