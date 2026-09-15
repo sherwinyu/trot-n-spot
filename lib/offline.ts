@@ -106,16 +106,43 @@ export function isNetworkError(err: unknown): boolean {
   return /network request failed|failed to fetch|fetch failed|network error/i.test(message);
 }
 
-export async function cacheSet(key: string, value: unknown): Promise<void> {
-  await AsyncStorage.setItem(CACHE_PREFIX + key, JSON.stringify(value));
+export type CacheEntry<T> = {
+  value: T;
+  updatedAt: number | null; // null for entries written before timestamps existed
+};
+
+type StoredEntry = { __cache: 1; value: unknown; updatedAt: number };
+
+function isStoredEntry(raw: unknown): raw is StoredEntry {
+  return typeof raw === 'object' && raw !== null && (raw as StoredEntry).__cache === 1;
 }
 
-export async function cacheGet<T>(key: string): Promise<T | null> {
+export async function cacheSet(key: string, value: unknown): Promise<void> {
+  const entry: StoredEntry = { __cache: 1, value, updatedAt: Date.now() };
+  await AsyncStorage.setItem(CACHE_PREFIX + key, JSON.stringify(entry));
+}
+
+export async function cacheGetEntry<T>(key: string): Promise<CacheEntry<T> | null> {
   const raw = await AsyncStorage.getItem(CACHE_PREFIX + key);
   if (!raw) return null;
   try {
-    return JSON.parse(raw) as T;
+    const parsed: unknown = JSON.parse(raw);
+    if (isStoredEntry(parsed)) return { value: parsed.value as T, updatedAt: parsed.updatedAt };
+    return { value: parsed as T, updatedAt: null };
   } catch {
     return null;
   }
+}
+
+export async function cacheGet<T>(key: string): Promise<T | null> {
+  const entry = await cacheGetEntry<T>(key);
+  return entry ? entry.value : null;
+}
+
+// Wipes every cached read (feed, profile, packs, signed URLs) but not the
+// mutation queue — queued quests still belong to whoever created them.
+export async function cacheClearAll(): Promise<void> {
+  const keys = await AsyncStorage.getAllKeys();
+  const cacheKeys = keys.filter((k) => k.startsWith(CACHE_PREFIX));
+  if (cacheKeys.length > 0) await AsyncStorage.multiRemove(cacheKeys);
 }

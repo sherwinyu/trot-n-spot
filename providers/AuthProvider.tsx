@@ -5,7 +5,14 @@ import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import { signInWithGoogle, signOut as authSignOut } from '@/lib/auth';
 import { Profile, PackWithMembers } from '@/types/database';
-import { clearSignedPhotoUrlCache } from '@/lib/signedUrls';
+import { clearSignedPhotoUrlCache, hydrateSignedPhotoUrlCache } from '@/lib/signedUrls';
+import { cacheClearAll, cacheGet, cacheSet } from '@/lib/offline';
+import { resetPrefetchMemory } from '@/lib/prefetch';
+
+type CachedAccount = {
+  profile: Profile;
+  packs: PackWithMembers[];
+};
 
 type AuthContextType = {
   user: User | null;
@@ -41,7 +48,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // empty initial state — otherwise every launch flashes the screen.
   const [packsReady, setPacksReady] = useState(false);
 
+  // Last-good profile + packs, so a cold start with no signal still lands
+  // on the feed instead of onboarding or a blank screen.
+  const loadCachedAccount = useCallback(async (userId: string) => {
+    const cached = await cacheGet<CachedAccount>(`account:${userId}`);
+    if (!cached) return;
+    setProfile((prev) => prev ?? cached.profile);
+    setPacks((prev) => (prev.length > 0 ? prev : cached.packs));
+    setPacksReady(true);
+  }, []);
+
   const fetchProfile = useCallback(async (userId: string) => {
+    hydrateSignedPhotoUrlCache();
+    const cachedLoad = loadCachedAccount(userId);
+
     const { data, error } = await supabase
       .from('profiles')
       .select('*')
@@ -49,7 +69,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .single();
 
     if (error || !data) return;
-    setProfile(data as Profile);
+    const nextProfile = data as Profile;
+    setProfile(nextProfile);
 
     const { data: packRows, error: packError } = await supabase
       .from('packs')
@@ -57,19 +78,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .order('created_at', { ascending: true });
 
     if (!packError && packRows) {
-      setPacks(
-        packRows.map((row: any) => {
-          const { pack_members, pack_invites, ...pack } = row;
-          return {
-            ...pack,
-            members: (pack_members ?? []).filter((m: any) => m.status === 'active'),
-            invite_code: (pack_invites ?? []).find((i: any) => !i.revoked_at)?.code ?? null,
-          };
-        })
-      );
+      const nextPacks: PackWithMembers[] = packRows.map((row: any) => {
+        const { pack_members, pack_invites, ...pack } = row;
+        return {
+          ...pack,
+          members: (pack_members ?? []).filter((m: any) => m.status === 'active'),
+          invite_code: (pack_invites ?? []).find((i: any) => !i.revoked_at)?.code ?? null,
+        };
+      });
+      // Let the cache read settle first so it can't overwrite fresh data.
+      await cachedLoad;
+      setPacks(nextPacks);
       setPacksReady(true);
+      cacheSet(`account:${userId}`, { profile: nextProfile, packs: nextPacks });
     }
-  }, []);
+  }, [loadCachedAccount]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session: s } }) => {
@@ -102,6 +125,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = useCallback(async () => {
     await authSignOut();
     clearSignedPhotoUrlCache();
+    resetPrefetchMemory();
+    await cacheClearAll().catch(() => {});
     if (Platform.OS !== 'web') {
       await Promise.allSettled([
         ExpoImage.clearMemoryCache(),

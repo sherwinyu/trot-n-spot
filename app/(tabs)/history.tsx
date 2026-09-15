@@ -6,10 +6,10 @@ import { Text, View } from '@/components/Themed';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
 import { useQuests } from '@/hooks/useQuests';
-import { Quest } from '@/types/database';
+import { FeedQuest } from '@/lib/questFeed';
 import { formatDuration } from '@/lib/format';
 
-function HistoryCard({ quest }: { quest: Quest }) {
+function HistoryCard({ quest }: { quest: FeedQuest }) {
   const router = useRouter();
   const c = Colors[useColorScheme() ?? 'light'];
   const originalPath = quest.photo_thumbnail_path ?? quest.photo_path;
@@ -39,6 +39,7 @@ function HistoryCard({ quest }: { quest: Quest }) {
         />
         <QuestPhoto
           storagePath={completionPath}
+          localUri={quest.local_completion_uri}
           style={styles.photo}
           accessibilityLabel="Completed quest photo"
           fallback={
@@ -52,7 +53,9 @@ function HistoryCard({ quest }: { quest: Quest }) {
         <Text style={styles.cardDescription}>
           {quest.description || 'Quest'}
         </Text>
-        <Text style={styles.cardMeta}>Found in {timeToFind}</Text>
+        <Text style={styles.cardMeta}>
+          {quest.pending ? `Waiting to sync · Found in ${timeToFind}` : `Found in ${timeToFind}`}
+        </Text>
       </View>
     </TouchableOpacity>
   );

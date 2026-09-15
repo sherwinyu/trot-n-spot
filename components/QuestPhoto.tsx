@@ -5,6 +5,8 @@ import { useSignedPhotoUrl } from '@/hooks/useSignedPhotoUrl';
 
 type QuestPhotoProps = {
   storagePath: string | null;
+  // Local file for a quest that hasn't synced yet; skips signing entirely.
+  localUri?: string | null;
   style: StyleProp<ImageStyle>;
   fallback?: ReactNode;
   accessibilityLabel?: string;
@@ -12,22 +14,22 @@ type QuestPhotoProps = {
 
 export function QuestPhoto({
   storagePath,
+  localUri = null,
   style,
   fallback = null,
   accessibilityLabel,
 }: QuestPhotoProps) {
   const signedUrl = useSignedPhotoUrl(storagePath);
   const [failed, setFailed] = useState(false);
-  const source = useMemo(
-    () => signedUrl && storagePath
-      ? { uri: signedUrl, cacheKey: `quest-photo:${storagePath}` }
-      : null,
-    [signedUrl, storagePath]
-  );
+  const source = useMemo(() => {
+    if (localUri) return { uri: localUri };
+    if (signedUrl && storagePath) return { uri: signedUrl, cacheKey: `quest-photo:${storagePath}` };
+    return null;
+  }, [localUri, signedUrl, storagePath]);
 
   useEffect(() => {
     setFailed(false);
-  }, [storagePath, signedUrl]);
+  }, [localUri, storagePath, signedUrl]);
 
   if (!source || failed) return <>{fallback}</>;
 
@@ -37,7 +39,7 @@ export function QuestPhoto({
       style={style}
       contentFit="cover"
       cachePolicy="memory-disk"
-      recyclingKey={storagePath ?? undefined}
+      recyclingKey={localUri ?? storagePath ?? undefined}
       transition={100}
       accessibilityLabel={accessibilityLabel}
       onError={() => setFailed(true)}
