@@ -39,11 +39,18 @@ export type PendingMutation =
 const QUEUE_KEY = 'offline:mutation-queue';
 const CACHE_PREFIX = 'offline:cache:';
 
-export async function getQueue(): Promise<PendingMutation[]> {
+export function mutationOwner(mutation: PendingMutation): string {
+  return mutation.type === 'create_quest' ? mutation.payload.creatorId : mutation.payload.userId;
+}
+
+// The queue is shared across accounts on the device; pass `userId` to see
+// only the mutations the current session is allowed to replay.
+export async function getQueue(userId?: string): Promise<PendingMutation[]> {
   const raw = await AsyncStorage.getItem(QUEUE_KEY);
   if (!raw) return [];
   try {
-    return JSON.parse(raw);
+    const queue: PendingMutation[] = JSON.parse(raw);
+    return userId ? queue.filter((m) => mutationOwner(m) === userId) : queue;
   } catch {
     return [];
   }
@@ -74,8 +81,8 @@ export type FlushHandlers = {
 // Replays queued mutations oldest-first. Stops at the first failure
 // (probably still offline); the rest stay queued for the next flush.
 // Returns how many mutations were successfully synced.
-export async function flushQueue(handlers: FlushHandlers): Promise<number> {
-  const queue = await getQueue();
+export async function flushQueue(handlers: FlushHandlers, userId?: string): Promise<number> {
+  const queue = await getQueue(userId);
   let synced = 0;
 
   for (const mutation of queue) {

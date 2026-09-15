@@ -1,5 +1,33 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { cacheClearAll, cacheGet, cacheGetEntry, cacheSet, enqueue, getQueue } from '../offline';
+import { cacheClearAll, cacheGet, cacheGetEntry, cacheSet, enqueue, flushQueue, getQueue } from '../offline';
+
+describe('queue ownership', () => {
+  beforeEach(() => AsyncStorage.clear());
+
+  it('only replays and counts the current account’s mutations', async () => {
+    const alice = {
+      id: 'q-alice',
+      type: 'complete_quest' as const,
+      payload: { questId: 'q-alice', userId: 'alice', journeyId: null, photoUri: 'file:///a', completedAt: 'now' },
+    };
+    const bob = {
+      id: 'q-bob',
+      type: 'complete_quest' as const,
+      payload: { questId: 'q-bob', userId: 'bob', journeyId: null, photoUri: 'file:///b', completedAt: 'now' },
+    };
+    await enqueue(alice);
+    await enqueue(bob);
+
+    expect(await getQueue('bob')).toEqual([bob]);
+
+    const complete_quest = jest.fn(async () => {});
+    await flushQueue({ create_quest: jest.fn(), complete_quest }, 'bob');
+
+    expect(complete_quest).toHaveBeenCalledTimes(1);
+    expect(complete_quest).toHaveBeenCalledWith(bob.payload);
+    expect(await getQueue()).toEqual([alice]);
+  });
+});
 
 describe('read cache', () => {
   beforeEach(async () => {

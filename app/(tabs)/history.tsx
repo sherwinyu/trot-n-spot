@@ -21,8 +21,9 @@ function HistoryCard({ quest }: { quest: FeedQuest }) {
 
   return (
     <TouchableOpacity
-      style={[styles.card, { backgroundColor: c.card }]}
+      style={[styles.card, { backgroundColor: c.card }, quest.pending && styles.cardPending]}
       onPress={() => router.push(`/quest/${quest.id}`)}
+      disabled={quest.pending}
       accessibilityRole="button"
       accessibilityLabel={quest.description || 'Open completed quest'}
     >
@@ -92,6 +93,9 @@ export default function HistoryScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   content: { padding: 16 },
+  cardPending: {
+    opacity: 0.7,
+  },
   card: {
     backgroundColor: '#f5f5f5',
     borderRadius: 12,
