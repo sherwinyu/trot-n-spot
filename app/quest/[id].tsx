@@ -7,7 +7,9 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import { useCompleteQuest } from '@/hooks/useCompleteQuest';
 import { useJourney } from '@/hooks/useJourney';
-import { QUEST_COLUMNS_NO_LOCATION } from '@/hooks/useQuests';
+import { QUEST_COLUMNS_NO_LOCATION, QuestLists } from '@/hooks/useQuests';
+import { cacheGet, getQueue } from '@/lib/offline';
+import { applyPendingMutations, findQuestInLists } from '@/lib/questFeed';
 import { usePackLookups } from '@/providers/AuthProvider';
 import { capturePhoto } from '@/lib/photos';
 import { notify } from '@/lib/notify';
@@ -29,6 +31,22 @@ export default function QuestDetailScreen() {
 
   useEffect(() => {
     async function fetchQuest() {
+      // Show the copy from the feed cache first so the detail opens
+      // offline; the network fetch below replaces it when it lands.
+      if (user) {
+        const [cachedLists, queue] = await Promise.all([
+          cacheGet<QuestLists>(`quests:${user.id}`),
+          getQueue(user.id),
+        ]);
+        const cached = cachedLists
+          ? findQuestInLists(applyPendingMutations(cachedLists, queue, user.id), id)
+          : null;
+        if (cached) {
+          setQuest((prev) => prev ?? cached);
+          setLoading(false);
+        }
+      }
+
       // Never pull location with the quest itself — the assignee's
       // device shouldn't receive coordinates for an active hunt.
       const { data } = await supabase

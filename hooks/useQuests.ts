@@ -1,12 +1,18 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
-import { cacheGet, cacheSet } from '@/lib/offline';
-import { partitionQuests, QuestLists, EMPTY_QUEST_LISTS } from '@/lib/questFeed';
+import { cacheGetEntry, cacheSet, getQueue, isNetworkError, PendingMutation } from '@/lib/offline';
+import { prefetchQuestPhotos } from '@/lib/prefetch';
+import { applyPendingMutations, partitionQuests, QuestLists, EMPTY_QUEST_LISTS } from '@/lib/questFeed';
+import { useSync } from '@/providers/SyncProvider';
 import { Quest, QUEST_COLUMNS_NO_LOCATION } from '@/types/database';
 
 export { QUEST_COLUMNS_NO_LOCATION };
 export type { QuestLists };
+
+// What the most recent refresh attempt did. Anything other than `fresh`
+// means the lists on screen are the cached copy.
+export type FetchState = 'idle' | 'fetching' | 'fresh' | 'offline' | 'error';
 
 function hasAny(lists: QuestLists): boolean {
   return Object.values(lists).some((l) => l.length > 0);
@@ -14,8 +20,12 @@ function hasAny(lists: QuestLists): boolean {
 
 export function useQuests() {
   const { user, packs } = useAuth();
+  const { pendingCount, isOnline } = useSync();
   const [lists, setLists] = useState<QuestLists>(EMPTY_QUEST_LISTS);
+  const [queue, setQueue] = useState<PendingMutation[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fetchState, setFetchState] = useState<FetchState>('idle');
+  const [lastFetchedAt, setLastFetchedAt] = useState<number | null>(null);
 
   const packIds = packs.map((p) => p.id).join(',');
 
@@ -23,10 +33,18 @@ export function useQuests() {
   // offline (e.g. reviewing quests mid-walk with no signal).
   useEffect(() => {
     if (!user) return;
-    cacheGet<QuestLists>(`quests:${user.id}`).then((cached) => {
-      if (cached) setLists((prev) => (hasAny(prev) ? prev : { ...EMPTY_QUEST_LISTS, ...cached }));
+    cacheGetEntry<QuestLists>(`quests:${user.id}`).then((cached) => {
+      if (!cached) return;
+      setLists((prev) => (hasAny(prev) ? prev : { ...EMPTY_QUEST_LISTS, ...cached.value }));
+      setLastFetchedAt((prev) => prev ?? cached.updatedAt);
     });
   }, [user]);
+
+  // Queued creates/completes overlay the feed until they sync.
+  useEffect(() => {
+    if (!user) return;
+    getQueue(user.id).then(setQueue);
+  }, [user, pendingCount]);
 
   const refresh = useCallback(async () => {
     if (!user) return;
@@ -35,6 +53,7 @@ export function useQuests() {
       return;
     }
     setLoading(true);
+    setFetchState('fetching');
 
     try {
       const ids = packIds.split(',');
@@ -54,25 +73,39 @@ export function useQuests() {
       ]);
 
       // Don't clobber cached data with empty lists from a failed request.
-      if (!active.error && !completed.error) {
+      const failure = active.error ?? completed.error;
+      if (!failure) {
         const next = partitionQuests(
           (active.data as unknown as Quest[]) ?? [],
           (completed.data as unknown as Quest[]) ?? [],
           user.id
         );
         setLists(next);
+        setLastFetchedAt(Date.now());
+        setFetchState('fresh');
         cacheSet(`quests:${user.id}`, next);
+        prefetchQuestPhotos(next);
+      } else {
+        setFetchState(isNetworkError(failure.message) ? 'offline' : 'error');
       }
-    } catch {
+    } catch (err) {
       // Offline — keep whatever we have (cache or previous state).
+      setFetchState(isNetworkError(err) ? 'offline' : 'error');
     } finally {
       setLoading(false);
     }
   }, [user, packIds]);
 
+  // Also refetch when the queue drains (a flush just landed quests on the
+  // server) and when connectivity changes.
   useEffect(() => {
     refresh();
-  }, [refresh]);
+  }, [refresh, pendingCount, isOnline]);
 
-  return { ...lists, loading, refresh };
+  const merged = useMemo(
+    () => (user ? applyPendingMutations(lists, queue, user.id) : lists),
+    [lists, queue, user]
+  );
+
+  return { ...merged, loading, refresh, fetchState, lastFetchedAt };
 }

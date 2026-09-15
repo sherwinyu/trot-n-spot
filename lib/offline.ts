@@ -39,11 +39,18 @@ export type PendingMutation =
 const QUEUE_KEY = 'offline:mutation-queue';
 const CACHE_PREFIX = 'offline:cache:';
 
-export async function getQueue(): Promise<PendingMutation[]> {
+export function mutationOwner(mutation: PendingMutation): string {
+  return mutation.type === 'create_quest' ? mutation.payload.creatorId : mutation.payload.userId;
+}
+
+// The queue is shared across accounts on the device; pass `userId` to see
+// only the mutations the current session is allowed to replay.
+export async function getQueue(userId?: string): Promise<PendingMutation[]> {
   const raw = await AsyncStorage.getItem(QUEUE_KEY);
   if (!raw) return [];
   try {
-    return JSON.parse(raw);
+    const queue: PendingMutation[] = JSON.parse(raw);
+    return userId ? queue.filter((m) => mutationOwner(m) === userId) : queue;
   } catch {
     return [];
   }
@@ -74,8 +81,8 @@ export type FlushHandlers = {
 // Replays queued mutations oldest-first. Stops at the first failure
 // (probably still offline); the rest stay queued for the next flush.
 // Returns how many mutations were successfully synced.
-export async function flushQueue(handlers: FlushHandlers): Promise<number> {
-  const queue = await getQueue();
+export async function flushQueue(handlers: FlushHandlers, userId?: string): Promise<number> {
+  const queue = await getQueue(userId);
   let synced = 0;
 
   for (const mutation of queue) {
@@ -106,16 +113,43 @@ export function isNetworkError(err: unknown): boolean {
   return /network request failed|failed to fetch|fetch failed|network error/i.test(message);
 }
 
-export async function cacheSet(key: string, value: unknown): Promise<void> {
-  await AsyncStorage.setItem(CACHE_PREFIX + key, JSON.stringify(value));
+export type CacheEntry<T> = {
+  value: T;
+  updatedAt: number | null; // null for entries written before timestamps existed
+};
+
+type StoredEntry = { __cache: 1; value: unknown; updatedAt: number };
+
+function isStoredEntry(raw: unknown): raw is StoredEntry {
+  return typeof raw === 'object' && raw !== null && (raw as StoredEntry).__cache === 1;
 }
 
-export async function cacheGet<T>(key: string): Promise<T | null> {
+export async function cacheSet(key: string, value: unknown): Promise<void> {
+  const entry: StoredEntry = { __cache: 1, value, updatedAt: Date.now() };
+  await AsyncStorage.setItem(CACHE_PREFIX + key, JSON.stringify(entry));
+}
+
+export async function cacheGetEntry<T>(key: string): Promise<CacheEntry<T> | null> {
   const raw = await AsyncStorage.getItem(CACHE_PREFIX + key);
   if (!raw) return null;
   try {
-    return JSON.parse(raw) as T;
+    const parsed: unknown = JSON.parse(raw);
+    if (isStoredEntry(parsed)) return { value: parsed.value as T, updatedAt: parsed.updatedAt };
+    return { value: parsed as T, updatedAt: null };
   } catch {
     return null;
   }
+}
+
+export async function cacheGet<T>(key: string): Promise<T | null> {
+  const entry = await cacheGetEntry<T>(key);
+  return entry ? entry.value : null;
+}
+
+// Wipes every cached read (feed, profile, packs, signed URLs) but not the
+// mutation queue — queued quests still belong to whoever created them.
+export async function cacheClearAll(): Promise<void> {
+  const keys = await AsyncStorage.getAllKeys();
+  const cacheKeys = keys.filter((k) => k.startsWith(CACHE_PREFIX));
+  if (cacheKeys.length > 0) await AsyncStorage.multiRemove(cacheKeys);
 }

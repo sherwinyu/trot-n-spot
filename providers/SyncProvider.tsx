@@ -7,29 +7,47 @@ import { useAuth } from '@/providers/AuthProvider';
 
 type SyncContextType = {
   pendingCount: number;
+  // null until expo-network reports; true/false afterwards.
+  isOnline: boolean | null;
   flush: () => Promise<void>;
   refreshPendingCount: () => Promise<void>;
 };
 
 const SyncContext = createContext<SyncContextType>({
   pendingCount: 0,
+  isOnline: null,
   flush: async () => {},
   refreshPendingCount: async () => {},
 });
 
+function reachable(state: Network.NetworkState): boolean {
+  return !!state.isConnected && state.isInternetReachable !== false;
+}
+
 export function SyncProvider({ children }: { children: React.ReactNode }) {
   const { session } = useAuth();
   const [pendingCount, setPendingCount] = useState(0);
+  const [isOnline, setIsOnline] = useState<boolean | null>(null);
+
+  const userId = session?.user.id;
 
   const refreshPendingCount = useCallback(async () => {
-    const queue = await getQueue();
+    const queue = userId ? await getQueue(userId) : [];
     setPendingCount(queue.length);
-  }, []);
+  }, [userId]);
 
   const flush = useCallback(async () => {
-    await flushPendingMutations();
+    if (userId) await flushPendingMutations(userId);
     await refreshPendingCount();
-  }, [refreshPendingCount]);
+  }, [userId, refreshPendingCount]);
+
+  useEffect(() => {
+    Network.getNetworkStateAsync()
+      .then((state) => setIsOnline(reachable(state)))
+      .catch(() => {});
+    const sub = Network.addNetworkStateListener((state) => setIsOnline(reachable(state)));
+    return () => sub.remove();
+  }, []);
 
   // Flush whenever we come back online, the app foregrounds, or on sign-in.
   useEffect(() => {
@@ -38,7 +56,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     flush();
 
     const netSub = Network.addNetworkStateListener((state) => {
-      if (state.isConnected && state.isInternetReachable !== false) flush();
+      if (reachable(state)) flush();
     });
     const appSub = AppState.addEventListener('change', (state) => {
       if (state === 'active') flush();
@@ -51,7 +69,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   }, [session, flush]);
 
   return (
-    <SyncContext.Provider value={{ pendingCount, flush, refreshPendingCount }}>
+    <SyncContext.Provider value={{ pendingCount, isOnline, flush, refreshPendingCount }}>
       {children}
     </SyncContext.Provider>
   );
