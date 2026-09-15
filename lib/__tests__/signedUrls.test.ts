@@ -8,16 +8,62 @@ jest.mock('@/lib/supabase', () => ({
   },
 }));
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   clearSignedPhotoUrlCache,
   getSignedPhotoUrl,
+  hydrateSignedPhotoUrlCache,
   peekSignedPhotoUrl,
+  peekStaleSignedPhotoUrl,
 } from '../signedUrls';
+import { cacheGet, cacheSet } from '../offline';
+
+type Persisted = Record<string, { url: string; expiresAt: number }>;
 
 describe('signed photo URL cache', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    jest.useRealTimers();
     clearSignedPhotoUrlCache();
     mockCreateSignedUrl.mockReset();
+    await AsyncStorage.clear();
+  });
+
+  it('persists signed URLs so they survive a cold start', async () => {
+    jest.useFakeTimers();
+    mockCreateSignedUrl.mockResolvedValue({
+      data: { signedUrl: 'https://example.test/persisted' },
+      error: null,
+    });
+
+    await getSignedPhotoUrl('user/quest/thumbnail.jpg');
+    await jest.advanceTimersByTimeAsync(300);
+
+    const stored = await cacheGet<Persisted>('signed-urls');
+    expect(stored?.['user/quest/thumbnail.jpg'].url).toBe('https://example.test/persisted');
+  });
+
+  it('hydrates persisted URLs and exposes expired ones as stale', async () => {
+    await cacheSet('signed-urls', {
+      'user/quest/fresh.jpg': { url: 'https://example.test/fresh', expiresAt: Date.now() + 60 * 60 * 1000 },
+      'user/quest/expired.jpg': { url: 'https://example.test/expired', expiresAt: Date.now() - 1000 },
+    });
+
+    await hydrateSignedPhotoUrlCache();
+
+    expect(peekSignedPhotoUrl('user/quest/fresh.jpg')).toBe('https://example.test/fresh');
+    expect(peekSignedPhotoUrl('user/quest/expired.jpg')).toBeNull();
+    expect(peekStaleSignedPhotoUrl('user/quest/expired.jpg')).toBe('https://example.test/expired');
+    expect(mockCreateSignedUrl).not.toHaveBeenCalled();
+  });
+
+  it('forgets hydrated URLs on clear', async () => {
+    await cacheSet('signed-urls', {
+      'user/quest/a.jpg': { url: 'https://example.test/a', expiresAt: Date.now() + 60 * 60 * 1000 },
+    });
+    await hydrateSignedPhotoUrlCache();
+    clearSignedPhotoUrlCache();
+
+    expect(peekStaleSignedPhotoUrl('user/quest/a.jpg')).toBeNull();
   });
 
   it('deduplicates concurrent signing and reuses the result', async () => {

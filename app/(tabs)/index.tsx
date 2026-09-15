@@ -6,27 +6,30 @@ import { Text, View } from '@/components/Themed';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
 import { useQuests } from '@/hooks/useQuests';
+import { feedStatusMessage } from '@/lib/feedStatus';
 import { getTimeAgo } from '@/lib/format';
+import { FeedQuest } from '@/lib/questFeed';
 import { useAuth, usePackLookups } from '@/providers/AuthProvider';
 import { useSync } from '@/providers/SyncProvider';
-import { Quest } from '@/types/database';
 
 type FeedRow =
+  | { type: 'status'; key: string; message: string }
   | { type: 'sync'; key: string; pendingCount: number }
   | { type: 'section'; key: string; title: string }
   | { type: 'empty'; key: string; message: string }
-  | { type: 'quest'; key: string; quest: Quest; subtitle?: string };
+  | { type: 'quest'; key: string; quest: FeedQuest; subtitle?: string };
 
 const QuestCard = memo(function QuestCard({
   quest,
   subtitle,
 }: {
-  quest: Quest;
+  quest: FeedQuest;
   subtitle?: string;
 }) {
   const router = useRouter();
   const c = Colors[useColorScheme() ?? 'light'];
   const thumbnailPath = quest.photo_thumbnail_path ?? quest.photo_path;
+  const meta = subtitle ? `${subtitle} · ${getTimeAgo(quest.created_at)}` : getTimeAgo(quest.created_at);
   const fallback = (
     <View style={[styles.cardImage, styles.imagePlaceholder, { backgroundColor: c.cardAlt }]}>
       <Text style={styles.placeholderIcon}>🔍</Text>
@@ -35,28 +38,31 @@ const QuestCard = memo(function QuestCard({
 
   return (
     <TouchableOpacity
-      style={[styles.card, { backgroundColor: c.card }]}
+      style={[styles.card, { backgroundColor: c.card }, quest.pending && styles.cardPending]}
       onPress={() => router.push(`/quest/${quest.id}`)}
+      disabled={quest.pending}
       accessibilityRole="button"
       accessibilityLabel={quest.description || 'Open quest'}
     >
       <QuestPhoto
-        storagePath={thumbnailPath}
+        storagePath={thumbnailPath || null}
+        localUri={quest.local_photo_uri}
         style={styles.cardImage}
         fallback={fallback}
         accessibilityLabel={quest.description || 'Quest photo'}
       />
       <View style={styles.cardContent}>
         <Text style={styles.cardDescription}>{quest.description || 'Find this!'}</Text>
-        <Text style={styles.cardMeta}>
-          {subtitle ? `${subtitle} · ${getTimeAgo(quest.created_at)}` : getTimeAgo(quest.created_at)}
-        </Text>
+        <Text style={styles.cardMeta}>{quest.pending ? `Waiting to sync · ${meta}` : meta}</Text>
       </View>
     </TouchableOpacity>
   );
 });
 
 function renderFeedRow({ item }: { item: FeedRow }) {
+  if (item.type === 'status') {
+    return <Text style={styles.statusText} accessibilityLiveRegion="polite">{item.message}</Text>;
+  }
   if (item.type === 'sync') {
     return (
       <View style={styles.syncBanner}>
@@ -72,8 +78,8 @@ function renderFeedRow({ item }: { item: FeedRow }) {
 }
 
 export default function FeedScreen() {
-  const { forMe, openForPack, byMe, aroundMyPacks, loading, refresh } = useQuests();
-  const { pendingCount } = useSync();
+  const { forMe, openForPack, byMe, aroundMyPacks, loading, refresh, fetchState, lastFetchedAt } = useQuests();
+  const { pendingCount, isOnline } = useSync();
   const { packs } = useAuth();
   const { memberNames, packNames } = usePackLookups();
 
@@ -81,15 +87,17 @@ export default function FeedScreen() {
     const next: FeedRow[] = [];
     const showPackLabels = packs.length > 1;
     const nameOf = (id: string | null) => (id ? memberNames[id] ?? 'a packmate' : '');
-    const withPack = (base: string | undefined, quest: Quest) => {
+    const withPack = (base: string | undefined, quest: FeedQuest) => {
       const label = showPackLabels ? packNames[quest.pack_id] : undefined;
       if (base && label) return `${base} · ${label}`;
       return base ?? label;
     };
-    const addQuest = (section: string, quest: Quest, subtitle?: string) => {
+    const addQuest = (section: string, quest: FeedQuest, subtitle?: string) => {
       next.push({ type: 'quest', key: `${section}:${quest.id}`, quest, subtitle });
     };
 
+    const status = feedStatusMessage(fetchState, lastFetchedAt, isOnline);
+    if (status) next.push({ type: 'status', key: 'status', message: status });
     if (pendingCount > 0) next.push({ type: 'sync', key: 'sync', pendingCount });
 
     next.push({ type: 'section', key: 'for-me-heading', title: 'Quests for You' });
@@ -143,7 +151,7 @@ export default function FeedScreen() {
     }
 
     return next;
-  }, [aroundMyPacks, byMe, forMe, memberNames, openForPack, packNames, packs.length, pendingCount]);
+  }, [aroundMyPacks, byMe, fetchState, forMe, isOnline, lastFetchedAt, memberNames, openForPack, packNames, packs.length, pendingCount]);
 
   // Tab screens stay mounted, so refetch whenever the feed regains focus.
   useFocusEffect(
@@ -180,6 +188,14 @@ const styles = StyleSheet.create({
     color: '#999',
     fontStyle: 'italic',
     marginBottom: 16,
+  },
+  statusText: {
+    color: '#999',
+    fontSize: 12,
+    marginTop: 4,
+  },
+  cardPending: {
+    opacity: 0.7,
   },
   card: {
     flexDirection: 'row',
