@@ -2,6 +2,9 @@ import { createClient } from '@supabase/supabase-js';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '@/config/supabase'; // pragma: allowlist secret
+import { installAuthCrypto } from '@/lib/authCrypto';
+
+installAuthCrypto();
 
 // Use localStorage for web, SecureStore for native
 const storageAdapter = Platform.OS === 'web' 
@@ -35,5 +38,6 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false,
+    flowType: 'pkce',
   },
 });

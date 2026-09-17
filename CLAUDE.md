@@ -26,7 +26,7 @@ applies only to quest photos.
 - **Client**: React Native + Expo (Expo Router v4, file-based routing)
 - **Backend**: Supabase (PostgreSQL, Auth, Storage, Edge Functions). A hosted project exists (`xbegbjicfgsozazlbysc.supabase.co`); the `preview` EAS profile bakes its URL/anon key in via env (see `eas.json`)
 - **Offline**: lightweight mutation queue + feed cache (`lib/offline.ts`, `lib/sync.ts`) — deliberately no PowerSync
-- **Auth**: Supabase Auth email login (shown when `__DEV__` or `EXPO_PUBLIC_ENABLE_EMAIL_LOGIN=true` at build time; Google OAuth planned, currently a stub in `lib/auth.ts`)
+- **Auth**: Supabase Auth email login (shown when `__DEV__` or `EXPO_PUBLIC_ENABLE_EMAIL_LOGIN=true` at build time; Google OAuth uses Supabase PKCE and the system browser; setup and the opt-in flag are in `docs/google-login.md`)
 - **Push**: Expo Notifications (DB trigger → edge function → Expo push API)
 - **E2E Testing**: Playwright web E2E (`e2e/run-e2e.js`) + Maestro on device
 - **Unit Testing**: Jest; DB tests via `scripts/db-test.sh` (plain Postgres, no Docker)

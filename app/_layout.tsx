@@ -35,6 +35,8 @@ function AuthGate() {
     const firstSegment = segments[0];
     const secondSegment = (segments as string[])[1] as string | undefined;
     const inAuthGroup = firstSegment === '(auth)';
+    // Let the callback exchange its code before any auth redirect, including cold starts.
+    if ((firstSegment as string) === 'auth' && secondSegment === 'callback') return;
 
     if (!session) {
       if (!inAuthGroup) router.replace('/(auth)/login');
