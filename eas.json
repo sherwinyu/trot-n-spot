@@ -1,6 +1,6 @@
 {
   "cli": {
-    "version": ">= 18.0.0"
+    "version": ">= 24.4.1"
   },
   "build": {
     "development": {
@@ -11,7 +11,8 @@
       },
       "ios": {
         "simulator": true
-      }
+      },
+      "channel": "development"
     },
     "preview": {
       "distribution": "internal",
@@ -21,13 +22,18 @@
       "env": {
         "EXPO_PUBLIC_SUPABASE_URL": "https://xbegbjicfgsozazlbysc.supabase.co",
         "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhiZWdiamljZmdzb3phemxieXNjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMxMjA3NTAsImV4cCI6MjA5ODY5Njc1MH0.73KPJi1N4pn5-qf1KViqCXCAo-Is1eosAyjmwceXO3U",
-        "EXPO_PUBLIC_ENABLE_EMAIL_LOGIN": "true"
-      }
+        "EXPO_PUBLIC_ENABLE_EMAIL_LOGIN": "true",
+        "EXPO_PUBLIC_ENABLE_GOOGLE_LOGIN": "false",
+        "SHARP_IGNORE_GLOBAL_LIBVIPS": "1"
+      },
+      "channel": "preview",
+      "environment": "preview"
     },
     "production": {
       "distribution": "store",
       "environment": "production",
-      "autoIncrement": true
+      "autoIncrement": true,
+      "channel": "production"
     }
   }
 }
