@@ -11,6 +11,13 @@
 - The retry from commit `150c072` succeeded on September 21: [install build 04726926](https://expo.dev/accounts/sherwinyu/projects/trot-n-spot/builds/04726926-3046-4862-9569-3bee4caa9be8). Downloaded and inspected the IPA: version 1.0.0 (1), correct bundle ID and Apple team, Nadia's device included, provisioning expiry September 21, 2027 UTC, and `codesign --verify --deep --strict` passed. The installation manifest returned HTTP 200 without authentication. The embedded Expo configuration enables updates on the `preview` channel with fingerprint runtime matching.
 - Physical installation and sign-in remain unverified. Open the build link in Safari on the registered phone, choose Install, and enable Developer Mode if iOS prompts. Sign in with the existing email/password account. Expo Doctor reported newer SDK 55 patch releases (19/20 checks passed); these were not required for the successful native build.
 
+### Android companion build, 2026-09-21
+
+- Built the standalone Android `preview` APK from commit `b05cd14`: [install build c64ce26d](https://expo.dev/accounts/sherwinyu/projects/trot-n-spot/builds/c64ce26d-ab57-4585-b27c-637500d097ff). The build reused the existing EAS Android keystore and completed successfully.
+- Downloaded the APK (approximately 120 MB) and verified its signature with Android SDK `apksigner`. Its manifest confirms package `xyz.sherwinyu.trotnspot`, version 1.0.0 / version code 3, a non-debuggable release, and enabled Expo Updates using the correct project URL and `preview` channel. Physical-phone installation, sign-in, and OTA delivery remain unverified.
+- Open the build link on the Android phone, download/open the APK, allow installation from the browser if Android prompts, then install and sign in with email/password. No Expo Go or Metro server is required. See [Expo APK installation](https://docs.expo.dev/build-reference/apk/).
+- Publish Android-only updates with `--platform android`, or updates for both installed native platforms with `--platform all`, using the channel and environment below.
+
 ### Publish subsequent JavaScript and asset updates
 
 The app uses EAS Update with separate `development`, `preview`, and `production` channels. Nadia's private build uses `preview`. `runtimeVersion.policy: fingerprint` restricts updates to compatible native builds; native dependency/configuration changes can require another install.
