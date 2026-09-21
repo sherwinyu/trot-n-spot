@@ -5,9 +5,7 @@ import { Text, View } from '@/components/Themed';
 import { useAuth } from '@/hooks/useAuth';
 import { signInWithEmail, signUpWithEmail } from '@/lib/auth';
 
-// Email/password auth is the only working sign-in until Google is configured.
-// Release environments opt into each provider explicitly so a production
-// build can never expose the unfinished Google flow by accident.
+// Enable Google only after configuring its provider and redirects in Supabase.
 const EMAIL_LOGIN_ENABLED =
   __DEV__ || process.env.EXPO_PUBLIC_ENABLE_EMAIL_LOGIN === 'true';
 const GOOGLE_LOGIN_ENABLED =
@@ -127,9 +125,12 @@ export default function LoginScreen() {
 
       {GOOGLE_LOGIN_ENABLED && (
         <TouchableOpacity
-          style={[styles.button, EMAIL_LOGIN_ENABLED && styles.googleButtonDev]}
+          style={styles.button}
           onPress={handleSignIn}
           disabled={loading}
+          accessibilityRole="button"
+          accessibilityLabel="Sign in with Google"
+          accessibilityState={{ disabled: loading, busy: loading }}
         >
           {loading ? (
             <ActivityIndicator color="#fff" />
@@ -244,9 +245,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     width: '100%',
     alignItems: 'center',
-  },
-  googleButtonDev: {
-    backgroundColor: '#999',
   },
   buttonText: {
     color: '#fff',
