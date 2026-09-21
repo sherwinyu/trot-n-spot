@@ -8,6 +8,8 @@
 - Nadia completed phone registration on September 21. EAS created an active ad hoc provisioning profile including her device and assigned an Apple push key. Signing credentials are ready; push delivery remains unverified.
 - Build from this release branch with `eas build --platform ios --profile preview`. Share the completed build's install URL. This is a standalone app using hosted Supabase with email/password login; Google remains disabled.
 - The first cloud build (`c6bd5fa7-c3bf-415b-b1c3-ec3d91530848`) failed during dependency installation: the receipts workspace's Sharp dependency attempted a source build and required `node-addon-api`. The preview build sets `SHARP_IGNORE_GLOBAL_LIBVIPS=1` to use Sharp's prebuilt binaries. Locally, forcing global libvips reproduced the exact error; setting this flag made the installer pass, and the prebuilt library successfully generated a PNG. See [Sharp installation](https://sharp.pixelplumbing.com/install/).
+- The retry from commit `150c072` succeeded on September 21: [install build 04726926](https://expo.dev/accounts/sherwinyu/projects/trot-n-spot/builds/04726926-3046-4862-9569-3bee4caa9be8). Downloaded and inspected the IPA: version 1.0.0 (1), correct bundle ID and Apple team, Nadia's device included, provisioning expiry September 21, 2027 UTC, and `codesign --verify --deep --strict` passed. The installation manifest returned HTTP 200 without authentication. The embedded Expo configuration enables updates on the `preview` channel with fingerprint runtime matching.
+- Physical installation and sign-in remain unverified. Open the build link in Safari on the registered phone, choose Install, and enable Developer Mode if iOS prompts. Sign in with the existing email/password account. Expo Doctor reported newer SDK 55 patch releases (19/20 checks passed); these were not required for the successful native build.
 
 ### Publish subsequent JavaScript and asset updates
 
@@ -22,7 +24,7 @@ source scripts/env.sh
 eas update --platform ios --channel preview --environment preview --message "Describe the verified change"
 ```
 
-Updates download in the background on launch and apply on a subsequent launch. To verify on the phone, fully close and reopen the app up to twice. The first physical-device build and an actual on-device OTA update remain unverified until the app is built and installed. The store `production` environment must be configured separately before using it.
+Updates download in the background on launch and apply on a subsequent launch. To verify on the phone, fully close and reopen the app up to twice. The signed build's update configuration has been checked; an actual on-device OTA update remains unverified. The store `production` environment must be configured separately before using it.
 
 Sources: [EAS Update setup](https://docs.expo.dev/eas-update/getting-started/), [runtime compatibility](https://docs.expo.dev/eas-update/runtime-versions/), [Apple security delay](https://support.apple.com/en-us/120340), [EAS Apple login fix](https://github.com/expo/eas-cli/issues/4392).
 
