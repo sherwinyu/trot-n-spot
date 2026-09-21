@@ -85,6 +85,12 @@
         "projectId": "3789c0fb-9573-430b-abd1-cad189032208"
       }
     },
-    "owner": "sherwinyu"
+    "owner": "sherwinyu",
+    "runtimeVersion": {
+      "policy": "fingerprint"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/3789c0fb-9573-430b-abd1-cad189032208"
+    }
   }
 }

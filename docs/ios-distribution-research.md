@@ -1,5 +1,30 @@
 # iOS development and private distribution
 
+## Private release and OTA updates, 2026-09-20
+
+- Apple Developer membership is active for team `D78RH24K5G`, renewing September 17, 2027. EAS is authenticated as `sherwinyu`.
+- EAS CLI was upgraded to 24.7.0. Versions before 24.4.1 fail Apple authentication with `iTunes service key is empty`; the CLI minimum now excludes those versions.
+- Registered `xyz.sherwinyu.trotnspot`, enabled its Push Notifications capability, and created the Apple distribution certificate. Push delivery has not been verified.
+- The first physical-device build still requires Nadia to complete phone registration. Her iPhone imposed a one-hour security delay before allowing the registration profile. When the notification arrives, finish profile installation, then verify with `eas device:list --apple-team-id D78RH24K5G --non-interactive`.
+- Build from this release branch with `eas build --platform ios --profile preview`. Select Nadia's registered phone when EAS creates the ad hoc provisioning profile. Share the completed build's install URL. This is a standalone app using hosted Supabase with email/password login; Google remains disabled.
+
+### Publish subsequent JavaScript and asset updates
+
+The app uses EAS Update with separate `development`, `preview`, and `production` channels. Nadia's private build uses `preview`. `runtimeVersion.policy: fingerprint` restricts updates to compatible native builds; native dependency/configuration changes can require another install.
+
+The EAS project `preview` environment contains the hosted Supabase URL/public anon key and email/Google flags matching the build profile. Keep these values synchronized: **EAS Update does not inherit `build.preview.env` from eas.json**. SDK 55 requires the update command's `--environment` argument. Never publish a local-backend configuration to this channel.
+
+After validating a JavaScript or asset change, publish explicitly:
+
+```bash
+source scripts/env.sh
+eas update --platform ios --channel preview --environment preview --message "Describe the verified change"
+```
+
+Updates download in the background on launch and apply on a subsequent launch. To verify on the phone, fully close and reopen the app up to twice. The first native build and an actual on-device OTA update remain unverified until the phone is registered and the app installed. The store `production` environment must be configured separately before using it.
+
+Sources: [EAS Update setup](https://docs.expo.dev/eas-update/getting-started/), [runtime compatibility](https://docs.expo.dev/eas-update/runtime-versions/), [Apple security delay](https://support.apple.com/en-us/120340), [EAS Apple login fix](https://github.com/expo/eas-cli/issues/4392).
+
 Researched 2026-09-14 against Apple and Expo documentation. Initial repository audit used commit `f6c2f80`. Local setup results below were verified on the same date; physical-device installation remains pending.
 
 ## Local setup progress, 2026-09-14
