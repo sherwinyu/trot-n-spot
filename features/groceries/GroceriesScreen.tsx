@@ -48,6 +48,7 @@ import { Explore } from './Explore';
 import { ReceiptView } from './ReceiptView';
 import { ProductView } from './ProductView';
 import { demoReceipt, demoStats } from './demo';
+import { RECEIPTS_SERVICE_CONFIGURED } from './api';
 
 type Screen =
   | { type: 'explore' | 'receipts' | 'scan' | 'settings' }
@@ -208,7 +209,7 @@ function Main() {
   const pick = async (kind: 'camera' | 'library' | 'files') => {
     setError('');
     if (demo) {
-      setNotice('Connect your server to save real receipts.');
+      setNotice('This sample journal does not save real receipts.');
       return;
     }
     try {
@@ -335,13 +336,15 @@ function Main() {
               {history.length ? '‹ Back' : 'Grocery journal'}
             </Text>
           </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Connection settings"
-            onPress={() => go({ type: 'settings' })}
-          >
-            <Text style={s.link}>Connection</Text>
-          </Pressable>
+          {!RECEIPTS_SERVICE_CONFIGURED && __DEV__ ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Connection settings"
+              onPress={() => go({ type: 'settings' })}
+            >
+              <Text style={s.link}>Connection</Text>
+            </Pressable>
+          ) : null}
         </View>
         {demo ? (
           <View style={{ backgroundColor: colors.lime, padding: 9 }}>
@@ -355,7 +358,7 @@ function Main() {
                   setScreen({ type: 'settings' });
                 }}
               >
-                Connect your server →
+                Return to setup →
               </Text>
             </Text>
           </View>
@@ -746,28 +749,38 @@ function Setup({
           what keeps finding its way into your basket.
         </Text>
       </View>
-      <Card>
-        <Text style={s.heading}>Connect your grocery journal</Text>
-        <Field
-          label="Server address"
-          value={url}
-          onChangeText={setURL}
-          autoCapitalize="none"
-          autoCorrect={false}
-          keyboardType="url"
-          placeholder="https://your-server.example"
-        />
-        {error ? <ErrorBox message={error} /> : null}
-        <Button
-          label={busy ? 'Connecting…' : 'Connect'}
-          disabled={busy}
-          onPress={() => void save()}
-        />
-        <Text style={s.muted}>
-          Your Trot n Spot sign-in keeps your receipts private. No extra account
-          or access token is needed.
-        </Text>
-      </Card>
+      {__DEV__ ? (
+        <Card>
+          <Text style={s.heading}>Connect your grocery journal</Text>
+          <Field
+            label="Server address"
+            value={url}
+            onChangeText={setURL}
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="url"
+            placeholder="https://your-server.example"
+          />
+          {error ? <ErrorBox message={error} /> : null}
+          <Button
+            label={busy ? 'Connecting…' : 'Connect'}
+            disabled={busy}
+            onPress={() => void save()}
+          />
+          <Text style={s.muted}>
+            Your Trot n Spot sign-in keeps your receipts private. No extra account
+            or access token is needed.
+          </Text>
+        </Card>
+      ) : (
+        <Card>
+          <Text style={s.heading}>Your grocery journal is getting ready</Text>
+          <Text style={s.body}>
+            Receipt scanning isn't available in this version yet. Update Trot n Spot
+            and try again, or explore the sample journal below.
+          </Text>
+        </Card>
+      )}
       <Button label="Explore with sample data" secondary onPress={onDemo} />
       <Text style={s.muted}>
         A personal grocery journal. No budgets, goals, or guilt.
