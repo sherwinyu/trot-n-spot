@@ -1,4 +1,6 @@
-import { StyleSheet, TouchableOpacity, Image } from 'react-native';
+import { useState } from 'react';
+import { WalkDudley } from '@/components/dudley/WalkDudley';
+import { StyleSheet, TouchableOpacity, Image, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Text, View } from '@/components/Themed';
 import { useColorScheme } from '@/components/useColorScheme';
@@ -10,7 +12,16 @@ import { formatTimer } from '@/lib/format';
 
 export default function ProfileScreen() {
   const { profile, packs, signOut } = useAuth();
-  const { activeJourney, startJourney, endJourney, journeyDuration } = useJourney();
+  const { activeJourney, startJourney, endJourney, journeyDuration, loading: journeyLoading } = useJourney();
+  const [walkBusy, setWalkBusy] = useState(false);
+  const changeWalk = async () => {
+    if (walkBusy) return;
+    setWalkBusy(true);
+    try {
+      if (activeJourney) await endJourney();
+      else await startJourney();
+    } finally { setWalkBusy(false); }
+  };
   const router = useRouter();
   const c = Colors[useColorScheme() ?? 'light'];
 
@@ -19,7 +30,7 @@ export default function ProfileScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <ScrollView contentContainerStyle={styles.container}>
       <View style={styles.profileSection}>
         {profile?.avatar_url && (
           <Image source={{ uri: profile.avatar_url }} style={styles.avatar} />
@@ -37,16 +48,17 @@ export default function ProfileScreen() {
 
       <View style={[styles.journeySection, { backgroundColor: c.card }]}>
         <Text style={styles.sectionTitle}>Walk</Text>
+        <WalkDudley journeyId={activeJourney?.id ?? null} loading={journeyLoading} />
         {activeJourney ? (
           <>
             <Text style={styles.timer}>{formatTimer(journeyDuration)}</Text>
-            <TouchableOpacity style={styles.endButton} onPress={endJourney}>
-              <Text style={styles.endButtonText}>End Walk</Text>
+            <TouchableOpacity style={styles.endButton} accessibilityRole="button" disabled={walkBusy || journeyLoading} onPress={changeWalk}>
+              <Text style={styles.endButtonText}>{walkBusy ? 'Ending…' : 'End Walk'}</Text>
             </TouchableOpacity>
           </>
         ) : (
-          <TouchableOpacity style={styles.startButton} onPress={startJourney}>
-            <Text style={styles.startButtonText}>Start Walk</Text>
+          <TouchableOpacity style={styles.startButton} accessibilityRole="button" disabled={walkBusy || journeyLoading} onPress={changeWalk}>
+            <Text style={styles.startButtonText}>{walkBusy ? 'Starting…' : 'Start Walk'}</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -54,13 +66,13 @@ export default function ProfileScreen() {
       <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
         <Text style={styles.signOutText}>Sign Out</Text>
       </TouchableOpacity>
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    flexGrow: 1,
     padding: 24,
   },
   profileSection: {

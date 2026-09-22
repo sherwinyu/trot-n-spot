@@ -1,6 +1,7 @@
 import { memo, useCallback, useMemo } from 'react';
 import { FlatList, RefreshControl, StyleSheet, TouchableOpacity } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
+import { Dudley, DudleyLoading } from '@/components/dudley/Dudley';
 import { QuestPhoto } from '@/components/QuestPhoto';
 import { Text, View } from '@/components/Themed';
 import { useColorScheme } from '@/components/useColorScheme';
@@ -16,6 +17,7 @@ type FeedRow =
   | { type: 'status'; key: string; message: string }
   | { type: 'sync'; key: string; pendingCount: number }
   | { type: 'section'; key: string; title: string }
+  | { type: 'dudley-empty'; key: string }
   | { type: 'empty'; key: string; message: string }
   | { type: 'quest'; key: string; quest: FeedQuest; subtitle?: string };
 
@@ -72,9 +74,25 @@ function renderFeedRow({ item }: { item: FeedRow }) {
       </View>
     );
   }
+  if (item.type === 'dudley-empty') return <EmptyQuests />;
   if (item.type === 'section') return <Text style={styles.sectionTitle}>{item.title}</Text>;
   if (item.type === 'empty') return <Text style={styles.emptyText}>{item.message}</Text>;
   return <QuestCard quest={item.quest} subtitle={item.subtitle} />;
+}
+
+function EmptyQuests() {
+  const router = useRouter();
+  const c = Colors[useColorScheme() ?? 'light'];
+  return (
+    <View style={[styles.emptyPanel, { backgroundColor: c.card }]}>
+      <Dudley mood="nap" animate={false} interactive />
+      <Text style={styles.emptyTitle}>Nothing to sniff out. Yet.</Text>
+      <Text style={{ color: c.muted, textAlign: 'center' }}>Your packmates are still out spotting.</Text>
+      <TouchableOpacity accessibilityRole="button" onPress={() => router.push('/(tabs)/create')} style={styles.createAction}>
+        <Text style={{ color: c.tint, fontWeight: '600' }}>Create a quest</Text>
+      </TouchableOpacity>
+    </View>
+  );
 }
 
 export default function FeedScreen() {
@@ -101,12 +119,12 @@ export default function FeedScreen() {
     if (pendingCount > 0) next.push({ type: 'sync', key: 'sync', pendingCount });
 
     next.push({ type: 'section', key: 'for-me-heading', title: 'Quests for You' });
-    if (forMe.length === 0) {
-      next.push({
-        type: 'empty',
-        key: 'for-me-empty',
-        message: 'Nothing yet — your packmates are still out spotting.',
-      });
+    if (forMe.length === 0 && fetchState === 'fresh') {
+      if (openForPack.length === 0) {
+        next.push({ type: 'dudley-empty', key: 'for-me-empty' });
+      } else {
+        next.push({ type: 'empty', key: 'for-me-empty', message: 'No targeted quests yet — try an open quest below.' });
+      }
     } else {
       forMe.forEach((quest) => addQuest(
         'for-me',
@@ -125,7 +143,7 @@ export default function FeedScreen() {
     }
 
     next.push({ type: 'section', key: 'by-me-heading', title: 'Quests by You' });
-    if (byMe.length === 0) {
+    if (byMe.length === 0 && fetchState === 'fresh') {
       next.push({ type: 'empty', key: 'by-me-empty', message: 'Create a quest for your pack!' });
     } else {
       byMe.forEach((quest) => addQuest(
@@ -165,6 +183,14 @@ export default function FeedScreen() {
       style={styles.container}
       contentContainerStyle={styles.content}
       refreshControl={<RefreshControl refreshing={loading} onRefresh={refresh} />}
+      ListHeaderComponent={
+        <DudleyLoading
+          loading={loading && isOnline !== false && fetchState === 'fetching'}
+          mood={lastFetchedAt ? 'sniff' : 'trot'}
+          compact={!!lastFetchedAt}
+          label={lastFetchedAt ? 'Sniffing around… Checking for new quests' : 'Loading your pack’s quests…'}
+        />
+      }
       data={rows}
       keyExtractor={(item) => item.key}
       renderItem={renderFeedRow}
@@ -177,6 +203,9 @@ export default function FeedScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  emptyPanel: { padding: 20, alignItems: 'center', gap: 8, borderRadius: 12, marginBottom: 16 },
+  emptyTitle: { fontSize: 18, fontWeight: '600', textAlign: 'center' },
+  createAction: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 16 },
   content: { padding: 16 },
   sectionTitle: {
     fontSize: 20,

@@ -1,3 +1,4 @@
+import { DudleyLoading } from '@/components/dudley/Dudley';
 import React, { useEffect, useState } from 'react';
 import { Image, Modal, Platform, ScrollView, Text, View } from 'react-native';
 import {
@@ -99,6 +100,7 @@ export function ReceiptView({
         </View>
         <StatusBadge status={receipt.status} />
       </View>
+      <DudleyLoading loading={receipt.status === 'processing'} mood="sniff" label="Reading receipt…" compact />
       <Card>
         <Text style={{ fontSize: 42, fontWeight: '600', color: colors.ink }}>
           {dollars(receipt.total_cents, receipt.currency ?? 'USD')}
