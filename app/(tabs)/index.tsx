@@ -120,10 +120,13 @@ export default function FeedScreen() {
 
     next.push({ type: 'section', key: 'for-me-heading', title: 'Quests for You' });
     if (forMe.length === 0 && fetchState === 'fresh') {
-      if (openForPack.length === 0) {
+      const feedEmpty = openForPack.length === 0 && byMe.length === 0 && aroundMyPacks.length === 0;
+      if (feedEmpty) {
         next.push({ type: 'dudley-empty', key: 'for-me-empty' });
-      } else {
+      } else if (openForPack.length > 0) {
         next.push({ type: 'empty', key: 'for-me-empty', message: 'No targeted quests yet — try an open quest below.' });
+      } else {
+        next.push({ type: 'empty', key: 'for-me-empty', message: 'Nothing yet — your packmates are still out spotting.' });
       }
     } else {
       forMe.forEach((quest) => addQuest(
