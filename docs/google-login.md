@@ -68,8 +68,15 @@ EXPO_PUBLIC_ENABLE_GOOGLE_LOGIN=true
 EXPO_PUBLIC_ENABLE_EMAIL_LOGIN=true
 ```
 
-For the standalone preview build, add the Google flag to `build.preview.env` in
-`eas.json`, alongside the existing email flag and hosted Supabase values. For a
+For an OTA update to the existing preview apps, enable the Google flag in the
+EAS `preview` environment and publish with `--environment preview`. Keep
+`eas.json` unchanged: Expo includes that file in the native fingerprint, so even
+an inline environment flag change creates a different runtime and prevents the
+existing apps from receiving the update. The inline `false` value records the
+original native build configuration; OTA bundles use the EAS environment value.
+
+When creating the next native preview build, also set the flag to `true` in
+`build.preview.env` in `eas.json`. This intentionally creates a new runtime. For a
 store build, set it in the EAS `production` environment along with the Supabase URL,
 public key, and email flag. These are build-time public flags; restart Metro for
 local development and rebuild/re-export the release bundle after changing them.
