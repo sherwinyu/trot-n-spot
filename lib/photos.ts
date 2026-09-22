@@ -2,6 +2,7 @@ import { Platform } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { supabase } from '@/lib/supabase';
+import { notify } from '@/lib/notify';
 
 const IMMUTABLE_CACHE_SECONDS = '31536000';
 
@@ -13,19 +14,38 @@ export type PhotoVariants = {
 
 // Camera capture isn't available on desktop web, so fall back to the
 // file picker there. Native always uses the camera per the spec.
+//
+// iOS's launchCameraAsync rejects (without prompting) unless camera
+// permission was already granted, so request it explicitly first.
 export async function capturePhoto(): Promise<string | null> {
   const options: ImagePicker.ImagePickerOptions = {
     mediaTypes: ['images'],
     quality: 1,
   };
 
-  const result =
-    Platform.OS === 'web'
-      ? await ImagePicker.launchImageLibraryAsync(options)
-      : await ImagePicker.launchCameraAsync(options);
+  if (Platform.OS === 'web') {
+    const result = await ImagePicker.launchImageLibraryAsync(options);
+    if (result.canceled || !result.assets[0]) return null;
+    return result.assets[0].uri;
+  }
 
-  if (result.canceled || !result.assets[0]) return null;
-  return result.assets[0].uri;
+  const permission = await ImagePicker.requestCameraPermissionsAsync();
+  if (!permission.granted) {
+    notify(
+      'Camera access needed',
+      'Allow camera access for TrotNSpot in your phone settings to take quest photos.'
+    );
+    return null;
+  }
+
+  try {
+    const result = await ImagePicker.launchCameraAsync(options);
+    if (result.canceled || !result.assets[0]) return null;
+    return result.assets[0].uri;
+  } catch (e) {
+    notify('Camera unavailable', e instanceof Error ? e.message : String(e));
+    return null;
+  }
 }
 
 export async function createPhotoVariants(photoUri: string): Promise<PhotoVariants> {
