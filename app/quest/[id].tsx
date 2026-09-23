@@ -1,7 +1,11 @@
 import { StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView } from 'react-native';
 import { Image } from 'expo-image';
-import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
-import { useState, useEffect } from 'react';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { QuestBackButton } from '@/components/QuestBackButton';
+import { QuestCompletion } from '@/components/QuestCompletion';
+import { DudleyLoading } from '@/components/dudley/Dudley';
+import { useState, useEffect, useRef, type ReactNode } from 'react';
 import { Text, View } from '@/components/Themed';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
@@ -12,7 +16,6 @@ import { cacheGet, getQueue } from '@/lib/offline';
 import { applyPendingMutations, findQuestInLists } from '@/lib/questFeed';
 import { usePackLookups } from '@/providers/AuthProvider';
 import { capturePhoto } from '@/lib/photos';
-import { notify } from '@/lib/notify';
 import { Quest } from '@/types/database';
 import { QuestPhoto } from '@/components/QuestPhoto';
 
@@ -24,6 +27,8 @@ export default function QuestDetailScreen() {
   const { completeQuest, loading: completing, error } = useCompleteQuest();
   const { activeJourney } = useJourney();
 
+  const [completion, setCompletion] = useState<{ queued: boolean } | null>(null);
+  const submitting = useRef(false);
   const [quest, setQuest] = useState<Quest | null>(null);
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [loading, setLoading] = useState(true);
@@ -93,42 +98,49 @@ export default function QuestDetailScreen() {
   };
 
   const handleConfirmCompletion = async () => {
-    if (!capturedUri || !quest) return;
+    if (!capturedUri || !quest || submitting.current || completion) return;
+    submitting.current = true;
 
-    const result = await completeQuest({
-      questId: quest.id,
-      photoUri: capturedUri,
-      journeyId: activeJourney?.id,
-    });
-
-    if (result) {
-      notify(
-        'Quest Complete!',
-        result.queued ? "Nice find! It will sync when you're back online." : 'Nice find!',
-        () => router.back()
-      );
+    try {
+      const result = await completeQuest({
+        questId: quest.id,
+        photoUri: capturedUri,
+        journeyId: activeJourney?.id,
+      });
+      if (result) setCompletion(result);
+    } finally {
+      submitting.current = false;
     }
   };
 
   if (loading) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator size="large" />
-      </View>
+      <QuestPage>
+        <View style={styles.centered}><DudleyLoading loading /></View>
+      </QuestPage>
     );
   }
 
   if (!quest) {
     return (
-      <View style={styles.centered}>
-        <Text>Quest not found</Text>
-      </View>
+      <QuestPage>
+        <View style={styles.centered}><Text>Quest not found</Text></View>
+      </QuestPage>
+    );
+  }
+
+  if (completion) {
+    return (
+      <QuestPage>
+        <ScrollView contentContainerStyle={styles.content}>
+          <QuestCompletion queued={completion.queued} onContinue={() => router.replace('/(tabs)')} />
+        </ScrollView>
+      </QuestPage>
     );
   }
 
   return (
-    <>
-      <Stack.Screen options={{ title: quest.description || 'Quest' }} />
+    <QuestPage>
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
         <QuestPhoto
           storagePath={quest.photo_path}
@@ -228,7 +240,16 @@ export default function QuestDetailScreen() {
           </>
         )}
       </ScrollView>
-    </>
+    </QuestPage>
+  );
+}
+
+function QuestPage({ children }: { children: ReactNode }) {
+  return (
+    <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right', 'bottom']}>
+      <QuestBackButton />
+      {children}
+    </SafeAreaView>
   );
 }
 
