@@ -76,13 +76,15 @@ it('finishes a celebration while backgrounded and does not replay on return', as
   expect(source()).toBe('wiggle-still');
 });
 
-it('boops a resting dog once, then restores the still pose', async () => {
+it('boops a resting dog for 2.5 seconds, then restores the still pose', async () => {
   render(<Dudley mood="nap" animate={false} interactive />);
   await settle();
   fireEvent.press(screen.getByRole('button', { name: 'Boop Dudley' }));
   expect(source()).toBe('wiggle-loop');
   expect(screen.getByText('Boop received. Tail activated.')).toBeTruthy();
-  act(() => jest.advanceTimersByTime(560));
+  act(() => jest.advanceTimersByTime(2499));
+  expect(source()).toBe('wiggle-loop');
+  act(() => jest.advanceTimersByTime(1));
   expect(source()).toBe('nap-still');
 });
 
@@ -97,6 +99,17 @@ it('never flashes a loader for short waits or waits to finish an animation', asy
   await settle();
   expect(screen.getByText('Loading quests…')).toBeTruthy();
   view.rerender(<DudleyLoading loading={false} />);
+  expect(screen.queryByTestId('dudley-image')).toBeNull();
+});
+
+it('shows a pull-to-refresh loader immediately while respecting reduced motion', async () => {
+  const view = render(<DudleyLoading loading immediate />);
+  expect(screen.getByText('Loading quests…')).toBeTruthy();
+  await settle();
+  expect(source()).toBe('trot-loop');
+  act(() => reduceMotion(true));
+  expect(source()).toBe('trot-still');
+  view.rerender(<DudleyLoading loading={false} immediate />);
   expect(screen.queryByTestId('dudley-image')).toBeNull();
 });
 
@@ -130,12 +143,14 @@ it('does not hold confirmed completion navigation for the wiggle', async () => {
   expect(onContinue).toHaveBeenCalledTimes(1);
 });
 
-it('animates actual walk transitions but not an existing walk loaded on launch', async () => {
+it('keeps both restored and newly started walks moving until the walk ends', async () => {
   const view = render(<WalkDudley journeyId={null} loading />);
   await settle();
   view.rerender(<WalkDudley journeyId="existing-walk" loading={false} />);
   await settle();
-  expect(source()).toBe('trot-still');
+  expect(source()).toBe('trot-loop');
+  act(() => jest.advanceTimersByTime(10000));
+  expect(source()).toBe('trot-loop');
   view.rerender(<WalkDudley journeyId={null} loading={false} />);
   await settle();
   expect(source()).toBe('nap-loop');
@@ -144,6 +159,22 @@ it('animates actual walk transitions but not an existing walk loaded on launch',
   view.rerender(<WalkDudley journeyId="new-walk" loading={false} />);
   await settle();
   expect(source()).toBe('trot-loop');
-  act(() => jest.advanceTimersByTime(1440));
-  expect(source()).toBe('trot-still');
+  act(() => jest.advanceTimersByTime(10000));
+  expect(source()).toBe('trot-loop');
+});
+
+it('resumes the active walk after a boop and extends the wiggle when booped again', async () => {
+  render(<WalkDudley journeyId="active-walk" loading={false} />);
+  await settle();
+  expect(source()).toBe('trot-loop');
+  fireEvent.press(screen.getByRole('button', { name: 'Boop Dudley' }));
+  expect(source()).toBe('wiggle-loop');
+  act(() => jest.advanceTimersByTime(2000));
+  fireEvent.press(screen.getByRole('button', { name: 'Boop Dudley' }));
+  act(() => jest.advanceTimersByTime(2499));
+  expect(source()).toBe('wiggle-loop');
+  act(() => jest.advanceTimersByTime(1));
+  expect(source()).toBe('trot-loop');
+  act(() => jest.advanceTimersByTime(10000));
+  expect(source()).toBe('trot-loop');
 });
