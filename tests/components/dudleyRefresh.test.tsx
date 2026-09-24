@@ -1,45 +1,59 @@
 import React from 'react';
-import { act, render } from '@testing-library/react-native';
-import { PanResponder, PanResponderCallbacks, TextInput, View } from 'react-native';
+import { act, fireEvent, render } from '@testing-library/react-native';
+import { Animated, Platform, RefreshControl, ScrollViewProps, View } from 'react-native';
 import { DudleyRefresh } from '@/components/dudley/DudleyRefresh';
 
 jest.mock('@react-navigation/native', () => ({ useIsFocused: () => true }));
-jest.mock('@/components/dudley/Dudley', () => ({ useMotionAllowed: () => false }));
+let mockMotion = false;
+jest.mock('@/components/dudley/Dudley', () => ({ useMotionAllowed: () => mockMotion }));
 jest.mock('expo-image', () => ({ Image: require('react-native').Image }));
 
-let handlers: PanResponderCallbacks;
-let editing = false;
-const event = {} as Parameters<NonNullable<PanResponderCallbacks['onPanResponderStart']>>[0];
-const gesture = (touches = 1) => ({ numberActiveTouches: touches, dy: 200, dx: 0 }) as Parameters<NonNullable<PanResponderCallbacks['onPanResponderStart']>>[1];
+let scroll: ScrollViewProps;
+const children = (props: ScrollViewProps) => { scroll = props; return <View />; };
+const scrolled = (y: number) => ({ nativeEvent: { contentOffset: { x: 0, y }, contentInset: {}, contentSize: {}, layoutMeasurement: {}, zoomScale: 1 } } as never);
 
-beforeEach(() => {
-  editing = false;
-  jest.spyOn(TextInput.State, 'currentlyFocusedInput').mockImplementation(() => editing ? {} as ReturnType<typeof TextInput.State.currentlyFocusedInput> : null as unknown as ReturnType<typeof TextInput.State.currentlyFocusedInput>);
-  jest.spyOn(PanResponder, 'create').mockImplementation(config => { handlers = config; return { panHandlers: {} }; });
-});
-afterEach(() => jest.restoreAllMocks());
+afterEach(() => { mockMotion = false; jest.restoreAllMocks(); });
 
-it('does not claim a drag when an input is focused at start or gains focus before movement', () => {
+it('iOS: refreshes from the list’s own over-scroll once released past the threshold, anywhere on the list', async () => {
   const refresh = jest.fn().mockResolvedValue(undefined);
-  render(<DudleyRefresh onRefresh={refresh}>{() => <View />}</DudleyRefresh>);
-  editing = true;
-  act(() => { handlers.onStartShouldSetPanResponderCapture?.(event, gesture()); });
-  act(() => { expect(handlers.onMoveShouldSetPanResponderCapture?.(event, gesture())).toBe(false); });
-  editing = false;
-  act(() => { handlers.onStartShouldSetPanResponderCapture?.(event, gesture()); });
-  editing = true;
-  act(() => { expect(handlers.onMoveShouldSetPanResponderCapture?.(event, gesture())).toBe(false); });
-  act(() => handlers.onPanResponderRelease?.(event, gesture(0)));
+  render(<DudleyRefresh onRefresh={refresh}>{children}</DudleyRefresh>);
+  expect(scroll.bounces).toBe(true);
+  expect(scroll.refreshControl).toBeUndefined();
+  act(() => { scroll.onScrollBeginDrag?.(scrolled(0)); scroll.onScroll?.(scrolled(-40)); scroll.onScrollEndDrag?.(scrolled(-40)); });
+  expect(refresh).not.toHaveBeenCalled();
+  await act(async () => { scroll.onScrollBeginDrag?.(scrolled(0)); scroll.onScroll?.(scrolled(-60)); scroll.onScroll?.(scrolled(-120)); scroll.onScrollEndDrag?.(scrolled(-120)); });
+  expect(refresh).toHaveBeenCalledTimes(1);
+});
+
+it('iOS: ignores a bounce that starts while the caller is loading', () => {
+  const refresh = jest.fn().mockResolvedValue(undefined);
+  render(<DudleyRefresh onRefresh={refresh} disabled>{children}</DudleyRefresh>);
+  act(() => { scroll.onScrollBeginDrag?.(scrolled(0)); scroll.onScroll?.(scrolled(-150)); scroll.onScrollEndDrag?.(scrolled(-150)); });
   expect(refresh).not.toHaveBeenCalled();
 });
 
-it('cancels an armed native pull when a second finger lands, even without a further move', () => {
+it('keeps every animation JS-driven: the pop shares nodes with the layout-driven reveal height', async () => {
+  mockMotion = true;
+  const configs: Array<{ useNativeDriver?: boolean }> = [];
+  const fake = { start: (cb?: Animated.EndCallback) => cb?.({ finished: true }), stop: jest.fn(), reset: jest.fn() };
+  jest.spyOn(Animated, 'timing').mockImplementation((_, config) => { configs.push(config); return fake; });
+  jest.spyOn(Animated, 'spring').mockImplementation((_, config) => { configs.push(config); return fake; });
   const refresh = jest.fn().mockResolvedValue(undefined);
-  render(<DudleyRefresh onRefresh={refresh}>{() => <View />}</DudleyRefresh>);
-  act(() => { handlers.onStartShouldSetPanResponderCapture?.(event, gesture()); });
-  expect(handlers.onMoveShouldSetPanResponderCapture?.(event, gesture())).toBe(true);
-  act(() => handlers.onPanResponderGrant?.(event, gesture()));
-  act(() => handlers.onPanResponderStart?.(event, gesture(2)));
-  act(() => handlers.onPanResponderRelease?.(event, gesture(0)));
-  expect(refresh).not.toHaveBeenCalled();
+  const { getByLabelText } = render(<DudleyRefresh onRefresh={refresh}>{children}</DudleyRefresh>);
+  await act(async () => { fireEvent.press(getByLabelText('Refresh')); });
+  expect(configs.length).toBeGreaterThan(2);
+  expect(configs.filter(c => c.useNativeDriver)).toEqual([]);
+});
+
+it('Android: a standard native pull anywhere on the list triggers the refresh, unless gestures are off', async () => {
+  jest.replaceProperty(Platform, 'OS', 'android');
+  const refresh = jest.fn().mockResolvedValue(undefined);
+  const { rerender } = render(<DudleyRefresh onRefresh={refresh}>{children}</DudleyRefresh>);
+  const control = scroll.refreshControl as React.ReactElement<React.ComponentProps<typeof RefreshControl>>;
+  expect(control.type).toBe(RefreshControl);
+  expect(scroll.bounces).toBe(false);
+  await act(async () => control.props.onRefresh?.());
+  expect(refresh).toHaveBeenCalledTimes(1);
+  rerender(<DudleyRefresh onRefresh={refresh} gesturesEnabled={false}>{children}</DudleyRefresh>);
+  expect(scroll.refreshControl).toBeUndefined();
 });

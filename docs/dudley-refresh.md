@@ -29,10 +29,14 @@ shake.‚Äù Start from current main, preserving the recently merged Dudley behavio
 
 ## Implementation
 
-`DudleyRefresh` supplies scroll props to the existing FlatList/ScrollView; it
-replaces their native `RefreshControl`. Native uses React Native PanResponder;
-web uses non-passive touch handling only for eligible pulls and also supports
-mouse dragging. Ordinary scrolling and list virtualization remain in place.
+`DudleyRefresh` supplies scroll props to the existing FlatList/ScrollView, and
+the list itself owns the gesture on native, so a standard pull from anywhere on
+the list works: iOS follows the list's own bounce (`contentOffset.y < 0`) and
+refreshes on release past the threshold; Android mounts an invisible
+`RefreshControl` purely for pull detection. Web uses non-passive touch handling
+only for eligible pulls and also supports mouse dragging. Ordinary scrolling and
+list virtualization remain in place. All Dudley animations run on the JS driver,
+since the pop transform shares nodes with the layout-driven reveal height.
 The async state and gesture eligibility live in `hooks/useDudleyRefresh.ts`.
 No new package or native configuration is required.
 
@@ -80,7 +84,7 @@ ears settle. Paws stay planted. No overlap or motion lines. Real transparency.‚Ä
   cancellation/blur, reduced motion, failed requests, fast responses, unmount,
   disabled state and callback freshness.
 
-Native PanResponder/ScrollView arbitration and VoiceOver/TalkBack need device
+Native list bounce/RefreshControl behavior and VoiceOver/TalkBack need device
 verification. This environment has no Android emulator or iOS simulator. Browser
 fixtures do not validate live backend, camera, GPS or actual offline sync.
 

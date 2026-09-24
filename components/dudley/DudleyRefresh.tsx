@@ -1,5 +1,5 @@
-import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, PanResponder, Platform, Pressable, ScrollViewProps, StyleSheet, Text, TextInput, View, ViewStyle } from 'react-native';
+import { ReactNode, useEffect, useRef, useState } from 'react';
+import { Animated, Platform, Pressable, RefreshControl, ScrollViewProps, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import { Image } from 'expo-image';
 import { useIsFocused } from '@react-navigation/native';
 import { useColorScheme } from '@/components/useColorScheme';
@@ -17,12 +17,18 @@ type Props = {
   children: (props: ScrollViewProps) => ReactNode;
 };
 
-/** A shared replacement for RefreshControl on feed, history and groceries. */
+/**
+ * A shared replacement for RefreshControl on feed, history and groceries.
+ * Native lists keep their own scroll gesture: iOS shows Dudley in the over-scroll
+ * bounce, Android uses an invisible RefreshControl so a standard pull anywhere
+ * on the list triggers him. Web pulls are tracked from DOM touch/mouse events.
+ */
 export function DudleyRefresh({ onRefresh, disabled = false, hidden = false, gesturesEnabled = true, children }: Props) {
   const focused = useIsFocused();
   const motion = useMotionAllowed();
   const c = Colors[useColorScheme() ?? 'light'];
-  const { height, phase, distance, error, controls } = useDudleyRefresh(onRefresh, disabled || hidden, motion, focused, gesturesEnabled);
+  const { height, bounce, phase, distance, error, controls } = useDudleyRefresh(onRefresh, disabled || hidden, motion, focused, gesturesEnabled);
+  const lift = useRef(Animated.add(height, bounce)).current;
   const root = useRef<View>(null);
   const pop = useRef(new Animated.Value(0)).current;
   const [shake, setShake] = useState(0);
@@ -34,8 +40,8 @@ export function DudleyRefresh({ onRefresh, disabled = false, hidden = false, ges
     pop.setValue(0);
     if (phase !== 'pop' || !motion) return;
     const animation = Animated.sequence([
-      Animated.timing(pop, { toValue: 1, duration: 160, useNativeDriver: true }),
-      Animated.spring(pop, { toValue: 0, speed: 24, bounciness: 9, useNativeDriver: true }),
+      Animated.timing(pop, { toValue: 1, duration: 160, useNativeDriver: false }),
+      Animated.spring(pop, { toValue: 0, speed: 24, bounciness: 9, useNativeDriver: false }),
     ]);
     animation.start();
     return () => animation.stop();
@@ -47,28 +53,6 @@ export function DudleyRefresh({ onRefresh, disabled = false, hidden = false, ges
     const timer = setInterval(() => setShake(n => (n + 1) % 8), 90);
     return () => clearInterval(timer);
   }, [phase, motion]);
-
-  const pan = useMemo(() => PanResponder.create({
-    onStartShouldSetPanResponderCapture: (_, g) => {
-      if (g.numberActiveTouches !== 1 || TextInput.State.currentlyFocusedInput()) controls.cancel();
-      else controls.begin();
-      return false;
-    },
-    onMoveShouldSetPanResponderCapture: (_, g) => {
-      // A field can gain focus after touch start; let it keep editing/selection.
-      if (TextInput.State.currentlyFocusedInput()) { controls.cancel(); return false; }
-      return controls.canMove(g.dx, g.dy, g.numberActiveTouches);
-    },
-    onPanResponderStart: (_, g) => { if (g.numberActiveTouches !== 1) controls.cancel(); },
-    onPanResponderGrant: (_, g) => controls.move(g.dy),
-    onPanResponderMove: (_, g) => {
-      if (g.numberActiveTouches !== 1) controls.cancel();
-      else controls.move(g.dy);
-    },
-    onPanResponderRelease: controls.release,
-    onPanResponderTerminate: controls.cancel,
-    onPanResponderTerminationRequest: () => true,
-  }), [controls]);
 
   // Web scroll views use browser scrolling. A non-passive listener prevents only
   // eligible downward pulls, leaving normal scrolling, taps and zoom untouched.
@@ -127,7 +111,7 @@ export function DudleyRefresh({ onRefresh, disabled = false, hidden = false, ges
     : distance < 42 ? 0 : ready ? 2 : 1;
   const label = busy ? 'Dudley’s shaking things up…' : ready ? 'Let go — Dudley’s ready!' : 'A little further…';
   return (
-    <View ref={root} testID="dudley-refresh" style={[styles.container, Platform.OS === 'web' && ({ userSelect: 'none' } as ViewStyle)]} {...(Platform.OS === 'web' ? {} : pan.panHandlers)}>
+    <View ref={root} testID="dudley-refresh" style={[styles.container, Platform.OS === 'web' && ({ userSelect: 'none' } as ViewStyle)]}>
       {!hidden && <View style={styles.toolbar}>
         <Text accessibilityLiveRegion="polite" style={[styles.caption, { color: c.muted }]}>
           {error ? 'Couldn’t refresh. Try again.' : busy || phase === 'pull' ? label : ''}
@@ -137,27 +121,42 @@ export function DudleyRefresh({ onRefresh, disabled = false, hidden = false, ges
           <Text style={{ color: c.tint, opacity: disabled || busy ? 0.5 : 1, fontSize: 13, fontWeight: '600' }}>Refresh</Text>
         </Pressable>
       </View>}
-      <Animated.View testID="dudley-refresh-reveal" pointerEvents="none" style={[styles.reveal, { height, backgroundColor: c.background }]}>
-        {/* Dudley climbs and grows while the list slides down, so he rises out from behind its edge;
-            once fully out his paws ride on the list edge like a shelf. */}
-        <Animated.View style={{ position: 'absolute', alignSelf: 'center', bottom: height.interpolate({ inputRange: [0, 128], outputRange: [-160, 0], extrapolate: 'clamp' }) }}>
-          <Animated.View testID={`dudley-refresh-frame-${frame}`} style={{ width: SIZE, height: SIZE, overflow: 'hidden', transform: [
-            { translateY: pop.interpolate({ inputRange: [0, 1], outputRange: [0, -14] }) },
-            { scale: Animated.multiply(
-              height.interpolate({ inputRange: [0, 128], outputRange: [0.86, 1], extrapolate: 'clamp' }),
-              pop.interpolate({ inputRange: [0, 1], outputRange: [1, 1.12] }),
-            ) },
-          ] }}>
-            <Image source={atlas} accessible={false} contentFit="fill" transition={0} style={{ position: 'absolute', width: SIZE * 4, height: SIZE * 2, left: -(frame % 4) * SIZE, top: -Math.floor(frame / 4) * SIZE }} />
+      <View style={styles.body}>
+        <Animated.View testID="dudley-refresh-reveal" style={[styles.reveal, { height, backgroundColor: c.background }]} />
+        {/* Dudley climbs and grows while the list slides down (the reveal spacer, or the list's own
+            over-scroll bounce), so he rises out from behind its edge; once fully out his paws ride on
+            the list edge like a shelf. The list itself paints no background, so he shows through the gap. */}
+        <Animated.View pointerEvents="none" style={[styles.stage, { height: lift }]}>
+          <Animated.View style={{ position: 'absolute', alignSelf: 'center', bottom: lift.interpolate({ inputRange: [0, 128], outputRange: [-160, 0], extrapolate: 'clamp' }) }}>
+            <Animated.View testID={`dudley-refresh-frame-${frame}`} style={{ width: SIZE, height: SIZE, overflow: 'hidden', transform: [
+              { translateY: pop.interpolate({ inputRange: [0, 1], outputRange: [0, -14] }) },
+              { scale: Animated.multiply(
+                lift.interpolate({ inputRange: [0, 128], outputRange: [0.86, 1], extrapolate: 'clamp' }),
+                pop.interpolate({ inputRange: [0, 1], outputRange: [1, 1.12] }),
+              ) },
+            ] }}>
+              <Image source={atlas} accessible={false} contentFit="fill" transition={0} style={{ position: 'absolute', width: SIZE * 4, height: SIZE * 2, left: -(frame % 4) * SIZE, top: -Math.floor(frame / 4) * SIZE }} />
+            </Animated.View>
           </Animated.View>
         </Animated.View>
-      </Animated.View>
-      {children({
-        onScroll: event => controls.scroll(event.nativeEvent.contentOffset.y),
-        scrollEventThrottle: 16, scrollEnabled: phase !== 'pull', bounces: false, overScrollMode: 'never',
-        // Prevent the browser's page reload gesture, while retaining list scrolling.
-        ...(Platform.OS === 'web' ? { style: { flex: 1, overscrollBehaviorY: 'contain' } as ScrollViewProps['style'] } : {}),
-      })}
+        {children({
+          onScroll: event => {
+            controls.scroll(event.nativeEvent.contentOffset.y);
+            if (Platform.OS === 'ios') controls.track(event.nativeEvent.contentOffset.y);
+          },
+          scrollEventThrottle: 16,
+          bounces: Platform.OS === 'ios',
+          overScrollMode: 'never',
+          ...(Platform.OS === 'ios' ? { onScrollBeginDrag: controls.beginDrag, onScrollEndDrag: controls.release } : {}),
+          ...(Platform.OS === 'android' && gesturesEnabled && !hidden ? {
+            // Off-screen and transparent: only the native pull detection is wanted.
+            refreshControl: <RefreshControl refreshing={busy} enabled={!disabled} onRefresh={() => void controls.refresh()}
+              colors={['transparent']} progressBackgroundColor="transparent" progressViewOffset={-200} />,
+          } : {}),
+          // Prevent the browser's page reload gesture, while retaining list scrolling.
+          ...(Platform.OS === 'web' ? { scrollEnabled: phase !== 'pull', style: { flex: 1, overscrollBehaviorY: 'contain' } as ScrollViewProps['style'] } : {}),
+        })}
+      </View>
     </View>
   );
 }
@@ -166,6 +165,8 @@ const styles = StyleSheet.create({
   container: { flex: 1, overflow: 'hidden' },
   toolbar: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', paddingHorizontal: 12 },
   button: { minWidth: 64, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
+  body: { flex: 1 },
   reveal: { overflow: 'hidden' },
+  stage: { position: 'absolute', top: 0, left: 0, right: 0, overflow: 'hidden' },
   caption: { flex: 1, fontSize: 12, paddingHorizontal: 4 },
 });
