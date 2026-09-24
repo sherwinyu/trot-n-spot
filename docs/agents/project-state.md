@@ -115,9 +115,9 @@ Residual risk: <what is still unverified> | none
 Rules:
 
 - Test output is mandatory: the command run and its result, not a claim that it passed.
-- Any UI-visible change carries browser screenshots or native/device screenshots, as appropriate to the changed surface. The capture recipe is in
+- Any UI-visible change carries browser screenshots or native/device screenshots, as appropriate to the changed surface, and the PR description itself embeds a preview image (or GIF/recording for animations and interactions) so reviewers see the result without opening the app. The capture recipe is in
   [`../testing.md`](../testing.md).
-- Video is optional and welcome.
+- Video is optional and welcome; for animated or gesture-driven changes a GIF/recording is expected.
 - "Same body" means the same lines, not the same bytes: images are uploaded to each host
   (see [`issue-tracker.md`](./issue-tracker.md)), so the `Screenshots:` links differ
   between the pull request and the issue. Nothing else may differ.
