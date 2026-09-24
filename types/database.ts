@@ -7,7 +7,8 @@ export type Profile = {
   id: string;
   display_name: string;
   avatar_url: string | null;
-  push_token: string | null;
+  // Global mute for push; tokens stay registered so re-enabling is instant.
+  push_enabled: boolean;
   created_at: string;
   updated_at: string;
 };

@@ -17,14 +17,17 @@ export function confirm(
   title: string,
   message: string,
   onConfirm: () => void,
-  confirmText = 'OK'
+  confirmText = 'OK',
+  confirmStyle: 'default' | 'destructive' = 'destructive',
+  onCancel?: () => void
 ) {
   if (Platform.OS === 'web') {
     if (window.confirm(`${title}\n\n${message}`)) onConfirm();
+    else onCancel?.();
   } else {
     Alert.alert(title, message, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: confirmText, style: 'destructive', onPress: onConfirm },
+      { text: 'Cancel', style: 'cancel', onPress: onCancel },
+      { text: confirmText, style: confirmStyle, onPress: onConfirm },
     ]);
   }
 }
