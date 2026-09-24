@@ -1,6 +1,7 @@
 import { memo, useCallback, useMemo } from 'react';
-import { FlatList, RefreshControl, StyleSheet, TouchableOpacity } from 'react-native';
+import { FlatList, StyleSheet, TouchableOpacity } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
+import { DudleyRefresh } from '@/components/dudley/DudleyRefresh';
 import { Dudley, DudleyLoading } from '@/components/dudley/Dudley';
 import { QuestPhoto } from '@/components/QuestPhoto';
 import { Text, View } from '@/components/Themed';
@@ -184,19 +185,14 @@ export default function FeedScreen() {
   );
 
   return (
-    <FlatList
+    <DudleyRefresh onRefresh={onRefresh} disabled={loading}>
+      {scrollProps => <FlatList
       style={styles.container}
       contentContainerStyle={styles.content}
-      refreshControl={
-        <RefreshControl
-          refreshing={loading || pullRefreshing}
-          onRefresh={onRefresh}
-        />
-      }
+      {...scrollProps}
       ListHeaderComponent={
         <DudleyLoading
-          loading={pullRefreshing || (loading && isOnline !== false && fetchState === 'fetching')}
-          immediate={pullRefreshing}
+          loading={!pullRefreshing && loading && isOnline !== false && fetchState === 'fetching'}
           mood={lastFetchedAt ? 'sniff' : 'trot'}
           compact={!!lastFetchedAt}
           label={lastFetchedAt ? 'Sniffing around… Checking for new quests' : 'Loading your pack’s quests…'}
@@ -208,7 +204,8 @@ export default function FeedScreen() {
       initialNumToRender={8}
       maxToRenderPerBatch={6}
       windowSize={5}
-    />
+    />}
+    </DudleyRefresh>
   );
 }
 
