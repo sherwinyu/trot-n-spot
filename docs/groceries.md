@@ -31,13 +31,53 @@ The Node API and extraction worker still need to run somewhere. Supabase replace
 | `CORS_ORIGINS`              | Comma-separated web app origins; local defaults are ports 8081 and 8082                                                              |
 
 3. Start the API and worker with `npm run receipts:up` on a Docker host. Compose starts only those two processes; there is no second Postgres container or image volume. Alternatively run the service `dev` and `worker` scripts in separate terminals. The database login must be able to `SET ROLE receipts_api`; the migration grants this to `postgres`.
-4. Set `EXPO_PUBLIC_RECEIPTS_API_URL` to the API's HTTPS URL when building the app. The Groceries tab then connects automatically with the existing Trot n Spot sign-in. Without that variable, enter the API URL under Groceries → Connection. No token field is shown.
+4. Set `EXPO_PUBLIC_RECEIPTS_API_URL` to the API's HTTPS URL in the EAS environment used for the app/update. The Groceries tab connects automatically with the existing Trot n Spot sign-in. A configured app ignores saved development server overrides and hides Connection settings. Without that variable, development builds allow an API URL under Groceries → Connection; release builds show an unavailable message and sample journal, never a server-address form.
 
 The existing app variables remain `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`, and the release login flags. Never expose database credentials, the service-role key, or the OpenAI key through `EXPO_PUBLIC_*`.
 
 For local development, point both app and service at the same local Supabase instance. A phone needs the API host's LAN address; Android emulator uses `http://10.0.2.2:3001`. `localhost` on the phone means the phone itself. A Docker container must use a Supabase address reachable from inside that container, not its own loopback address.
 
 Connection references: [Supabase database connections](https://supabase.com/docs/guides/database/connecting-to-postgres), [Storage access control](https://supabase.com/docs/guides/storage/security/access-control), [Auth getUser](https://supabase.com/docs/reference/javascript/auth-getuser).
+
+## Hosted deployment
+
+The receipt service uses the Fly app `trotnspot-receipts` in Seattle, near the
+Supabase project in `us-west-2`. `fly.receipts.toml` defines a public HTTPS API
+and a separate worker. The API stops when idle and starts on a request; the
+worker stays running to process uploaded receipts after the phone closes.
+
+The existing migration `20260914030352_groceries_supabase_store` was applied to
+the hosted project on 2026-09-22. The four tables have RLS enabled and the Storage
+bucket is private. Do not apply the migration a second time.
+
+Populate the ignored `services/receipts/.env` with the four required server
+variables above. Use the session-pooler database URL with TLS
+(`?sslmode=require` or `?sslmode=verify-full`). Keep this file mode `0600`.
+From the repository root:
+
+```sh
+node scripts/deploy-receipts.mjs --check
+node scripts/deploy-receipts.mjs
+curl --fail https://trotnspot-receipts.fly.dev/health
+```
+
+The script validates required values, stages secrets via stdin, and deploys one
+machine per process group. Secrets are excluded from the Docker context and
+never included in app bundles. Verify a real authenticated upload and worker
+extraction before publishing the app update.
+
+After the backend is healthy:
+
+```sh
+eas env:set preview --name EXPO_PUBLIC_RECEIPTS_API_URL \
+  --value https://trotnspot-receipts.fly.dev --visibility plaintext --non-interactive
+eas update --channel preview --environment preview --platform all \
+  --message "Connect grocery receipts automatically" --non-interactive
+```
+
+Preserve `eas.json` and native dependencies when publishing to the existing
+preview apps; changes to them alter the runtime fingerprint. Check both runtime
+hashes before publishing, as described in `docs/google-login.md`.
 
 ## Capture and processing
 
@@ -63,6 +103,7 @@ npm run receipts:test
 
 EXPO_PUBLIC_SUPABASE_URL=http://localhost:54321 \
 EXPO_PUBLIC_SUPABASE_ANON_KEY=local-test-anon-key \
+EXPO_PUBLIC_RECEIPTS_API_URL=http://localhost:3001 \
 npx expo export --platform web
 npm run groceries:test-ui
 
@@ -71,6 +112,6 @@ npx expo export --platform android --platform ios --output-dir test-results/nati
 
 Service tests apply the real receipt migration to embedded Postgres with minimal Supabase Auth/Storage schema stand-ins. They exercise owner RLS, denied owner reassignment, read-only client grants, private Storage policies, cross-account receipt/image/history/edit/reprocess denial, and the existing extraction/retry/reconciliation flows. Auth and Storage adapter tests use the real Supabase SDK against fake HTTP responses; no production credentials or model calls are used.
 
-The browser smoke test uses the real app/router/API and embedded Postgres with test Auth/Storage/vision adapters. It verifies sample data, import, interrupted-upload recovery, editing, analytics, navigation, and connecting a second user to the same backend without seeing the first user's receipts. Screenshots go to `test-results/groceries`. An existing Chromium can be selected with `BROWSER_EXECUTABLE_PATH`.
+The browser smoke test uses the real app/router/API and embedded Postgres with test Auth/Storage/vision adapters. It verifies automatic connection without a server-address form, import, interrupted-upload recovery, editing, analytics, navigation, and a second user connecting automatically without seeing the first user's receipts. Screenshots go to `test-results/groceries`. An existing Chromium can be selected with `BROWSER_EXECUTABLE_PATH`.
 
 Hosted migration, live Supabase Storage/Auth, real model extraction, physical camera permissions, and a signed phone build require deployment/device validation. The Berkeley Bowl reference image was unavailable; fixtures are explicitly synthetic.
