@@ -14,10 +14,6 @@ export type { QuestLists };
 // means the lists on screen are the cached copy.
 export type FetchState = 'idle' | 'fetching' | 'fresh' | 'offline' | 'error';
 
-function hasAny(lists: QuestLists): boolean {
-  return Object.values(lists).some((l) => l.length > 0);
-}
-
 export function useQuests() {
   const { user, packs } = useAuth();
   const { pendingCount, isOnline } = useSync();
@@ -30,15 +26,20 @@ export function useQuests() {
   const packIds = packs.map((p) => p.id).join(',');
 
   // Serve the last good fetch immediately so the feed is browsable
-  // offline (e.g. reviewing quests mid-walk with no signal).
-  useEffect(() => {
+  // offline (e.g. reviewing quests mid-walk with no signal). The cache is
+  // also the channel other screens use to push edits/deletes into a feed
+  // that stays mounted underneath them, so refresh() re-reads it too.
+  const hydrateFromCache = useCallback(async () => {
     if (!user) return;
-    cacheGetEntry<QuestLists>(`quests:${user.id}`).then((cached) => {
-      if (!cached) return;
-      setLists((prev) => (hasAny(prev) ? prev : { ...EMPTY_QUEST_LISTS, ...cached.value }));
-      setLastFetchedAt((prev) => prev ?? cached.updatedAt);
-    });
+    const cached = await cacheGetEntry<QuestLists>(`quests:${user.id}`);
+    if (!cached) return;
+    setLists({ ...EMPTY_QUEST_LISTS, ...cached.value });
+    setLastFetchedAt((prev) => prev ?? cached.updatedAt);
   }, [user]);
+
+  useEffect(() => {
+    hydrateFromCache();
+  }, [hydrateFromCache]);
 
   // Queued creates/completes overlay the feed until they sync.
   useEffect(() => {
@@ -54,6 +55,7 @@ export function useQuests() {
     }
     setLoading(true);
     setFetchState('fetching');
+    await hydrateFromCache();
 
     try {
       const ids = packIds.split(',');
@@ -94,7 +96,7 @@ export function useQuests() {
     } finally {
       setLoading(false);
     }
-  }, [user, packIds]);
+  }, [user, packIds, hydrateFromCache]);
 
   // Also refetch when the queue drains (a flush just landed quests on the
   // server) and when connectivity changes.

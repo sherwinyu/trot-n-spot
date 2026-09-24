@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Dudley } from './Dudley';
 
-/** React to confirmed journey changes, not taps or the initial server fetch. */
+/** Keep walking during an active journey; ending one gets a finite nap moment. */
 export function WalkDudley({ journeyId, loading }: { journeyId: string | null; loading: boolean }) {
   const previous = useRef<string | null | undefined>(undefined);
   const [moment, setMoment] = useState(0);
@@ -15,8 +15,8 @@ export function WalkDudley({ journeyId, loading }: { journeyId: string | null; l
       key={moment}
       mood={journeyId ? 'trot' : 'nap'}
       width={120}
-      animate={moment > 0}
-      durationMs={journeyId ? 1440 : 2800}
+      animate={!!journeyId || moment > 0}
+      durationMs={journeyId ? undefined : 2800}
       interactive
     />
   );

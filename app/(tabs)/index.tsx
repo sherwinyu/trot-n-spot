@@ -1,12 +1,14 @@
 import { memo, useCallback, useEffect, useMemo } from 'react';
-import { FlatList, RefreshControl, StyleSheet, TouchableOpacity } from 'react-native';
+import { FlatList, StyleSheet, TouchableOpacity } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
+import { DudleyRefresh } from '@/components/dudley/DudleyRefresh';
 import { Dudley, DudleyLoading } from '@/components/dudley/Dudley';
 import { QuestPhoto } from '@/components/QuestPhoto';
 import { Text, View } from '@/components/Themed';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
 import { useQuests } from '@/hooks/useQuests';
+import { usePullRefresh } from '@/hooks/usePullRefresh';
 import { feedStatusMessage } from '@/lib/feedStatus';
 import { getTimeAgo } from '@/lib/format';
 import { setFeedFocused } from '@/lib/notifications';
@@ -99,6 +101,7 @@ function EmptyQuests() {
 
 export default function FeedScreen() {
   const { forMe, openForPack, byMe, aroundMyPacks, loading, refresh, fetchState, lastFetchedAt } = useQuests();
+  const { refreshing: pullRefreshing, onRefresh } = usePullRefresh(refresh);
   const { pendingCount, isOnline } = useSync();
   const { packs } = useAuth();
   const { memberNames, packNames } = usePackLookups();
@@ -192,13 +195,14 @@ export default function FeedScreen() {
   }, [receivedCount, refresh]);
 
   return (
-    <FlatList
+    <DudleyRefresh onRefresh={onRefresh} disabled={loading}>
+      {scrollProps => <FlatList
       style={styles.container}
       contentContainerStyle={styles.content}
-      refreshControl={<RefreshControl refreshing={loading} onRefresh={refresh} />}
+      {...scrollProps}
       ListHeaderComponent={
         <DudleyLoading
-          loading={loading && isOnline !== false && fetchState === 'fetching'}
+          loading={!pullRefreshing && loading && isOnline !== false && fetchState === 'fetching'}
           mood={lastFetchedAt ? 'sniff' : 'trot'}
           compact={!!lastFetchedAt}
           label={lastFetchedAt ? 'Sniffing around… Checking for new quests' : 'Loading your pack’s quests…'}
@@ -210,7 +214,8 @@ export default function FeedScreen() {
       initialNumToRender={8}
       maxToRenderPerBatch={6}
       windowSize={5}
-    />
+    />}
+    </DudleyRefresh>
   );
 }
 

@@ -1,6 +1,7 @@
-import { StyleSheet, FlatList, TouchableOpacity, RefreshControl } from 'react-native';
+import { StyleSheet, FlatList, TouchableOpacity } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useCallback } from 'react';
+import { DudleyRefresh } from '@/components/dudley/DudleyRefresh';
 import { QuestPhoto } from '@/components/QuestPhoto';
 import { Text, View } from '@/components/Themed';
 import { useColorScheme } from '@/components/useColorScheme';
@@ -73,20 +74,22 @@ export default function HistoryScreen() {
   );
 
   return (
-    <FlatList
+    <DudleyRefresh onRefresh={refresh} disabled={loading}>
+      {scrollProps => <FlatList
       style={styles.container}
       contentContainerStyle={styles.content}
       data={completedQuests}
       keyExtractor={(item) => item.id}
       renderItem={({ item }) => <HistoryCard quest={item} />}
-      refreshControl={<RefreshControl refreshing={loading} onRefresh={refresh} />}
+      {...scrollProps}
       numColumns={1}
       ListEmptyComponent={
         <Text style={styles.emptyText}>
           No completed quests yet. Get out there!
         </Text>
       }
-    />
+    />}
+    </DudleyRefresh>
   );
 }
 

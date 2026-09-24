@@ -12,11 +12,11 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
-  RefreshControl,
   ScrollView,
   Text,
   View,
 } from 'react-native';
+import { DudleyRefresh } from '@/components/dudley/DudleyRefresh';
 import { useIsFocused } from '@react-navigation/native';
 import { ReceiptRuntimeProvider, useReceiptRuntime } from './RuntimeProvider';
 import * as ImagePicker from 'expo-image-picker';
@@ -389,18 +389,17 @@ function Main() {
           style={{ flex: 1 }}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
-          <ScrollView
+          <DudleyRefresh
+            onRefresh={() => refresh()}
+            disabled={refreshing}
+            hidden={setup}
+            // Editing/capture screens keep the button, without stealing field gestures.
+            gesturesEnabled={screen.type === 'explore' || screen.type === 'receipts'}
+          >
+            {scrollProps => <ScrollView
             keyboardShouldPersistTaps="handled"
             contentContainerStyle={s.page}
-            refreshControl={
-              !setup ? (
-                <RefreshControl
-                  refreshing={refreshing}
-                  onRefresh={() => void refresh()}
-                  tintColor={colors.green}
-                />
-              ) : undefined
-            }
+            {...scrollProps}
           >
             {error ? <ErrorBox message={error} /> : null}
             {notice ? (
@@ -703,7 +702,8 @@ function Main() {
                 ) : null}
               </>
             )}
-          </ScrollView>
+          </ScrollView>}
+          </DudleyRefresh>
         </KeyboardAvoidingView>
       </View>
     </View>

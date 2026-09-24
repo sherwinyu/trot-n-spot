@@ -14,7 +14,7 @@ const assets = {
 };
 export type DudleyMood = keyof typeof assets;
 
-function useMotionAllowed() {
+export function useMotionAllowed() {
   const focused = useIsFocused();
   const [reduced, setReduced] = useState(true);
   const [foreground, setForeground] = useState(AppState.currentState === 'active');
@@ -66,7 +66,7 @@ export function Dudley({ mood = 'trot', width = 144, animate = true, durationMs,
   useEffect(() => {
     if (!boop) return;
     setBooping(true);
-    const timer = setTimeout(() => setBooping(false), 560);
+    const timer = setTimeout(() => setBooping(false), 2500);
     return () => clearTimeout(timer);
   }, [boop]);
   const currentMood = booping ? 'wiggle' : mood;
@@ -106,12 +106,12 @@ export function useDelayedVisibility(active: boolean, delayMs = 200) {
   return active && ready;
 }
 
-export function DudleyLoading({ loading, mood = 'trot', label = 'Loading quests…', compact = false }: {
-  loading: boolean; mood?: DudleyMood; label?: string; compact?: boolean;
+export function DudleyLoading({ loading, mood = 'trot', label = 'Loading quests…', compact = false, immediate = false }: {
+  loading: boolean; mood?: DudleyMood; label?: string; compact?: boolean; immediate?: boolean;
 }) {
   const visible = useDelayedVisibility(loading);
   const c = Colors[useColorScheme() ?? 'light'];
-  if (!visible) return null;
+  if (!loading || (!immediate && !visible)) return null;
   return (
     <View style={[styles.loading, compact && styles.compact]}>
       <Dudley mood={mood} width={compact ? 80 : 144} />
