@@ -455,17 +455,35 @@ begin
   get diagnostics affected = row_count;
   assert affected = 1, 'creator can still edit the hint of a completed quest';
 
+  -- Reassigning to someone outside the pack is rejected at the DB even
+  -- though the creator passes the row-level USING check (Eve is a stranger).
+  begin
+    update quests set assignee_id = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', mode = 'targeted'
+      where id = '22222222-2222-2222-2222-222222222222';
+    raise exception 'reassign to non-member should have been rejected';
+  exception when insufficient_privilege then
+    null;
+  end;
+  assert (select assignee_id from quests where id = '22222222-2222-2222-2222-222222222222') is null, 'assignee unchanged after rejected reassign';
+
+  -- The seeded photo_path of quest 2 is this object: while the row exists
+  -- the object is still referenced and must survive a delete attempt.
   insert into storage.objects (bucket_id, name)
   values ('quest-photos', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/22222222-2222-2222-2222-222222222222/original.jpg');
   delete from storage.objects
     where name = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/22222222-2222-2222-2222-222222222222/original.jpg';
   get diagnostics affected = row_count;
-  assert affected = 1, 'creator removes own photo object';
+  assert affected = 0, 'photo still referenced by a quest cannot be deleted';
 
   delete from quests where id = '22222222-2222-2222-2222-222222222222';
   get diagnostics affected = row_count;
   assert affected = 1, 'creator deletes own quest';
   assert (select count(*) from quests where id = '22222222-2222-2222-2222-222222222222') = 0, 'quest gone';
+
+  delete from storage.objects
+    where name = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/22222222-2222-2222-2222-222222222222/original.jpg';
+  get diagnostics affected = row_count;
+  assert affected = 1, 'creator removes own photo object once unreferenced';
   raise notice 'PASS: creator can edit and delete own quest';
 end $$;
 
