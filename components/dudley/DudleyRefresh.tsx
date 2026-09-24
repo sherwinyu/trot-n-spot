@@ -138,8 +138,9 @@ export function DudleyRefresh({ onRefresh, disabled = false, hidden = false, ges
         </Pressable>
       </View>}
       <Animated.View testID="dudley-refresh-reveal" pointerEvents="none" style={[styles.reveal, { height, backgroundColor: c.background }]}>
-        {/* Dudley climbs and grows while the list slides down, so he rises out from behind its edge. */}
-        <Animated.View style={{ position: 'absolute', alignSelf: 'center', top: height.interpolate({ inputRange: [0, 96, 128, 164], outputRange: [48, 8, 0, -8], extrapolate: 'clamp' }) }}>
+        {/* Dudley climbs and grows while the list slides down, so he rises out from behind its edge;
+            once fully out his paws ride on the list edge like a shelf. */}
+        <Animated.View style={{ position: 'absolute', alignSelf: 'center', bottom: height.interpolate({ inputRange: [0, 128], outputRange: [-160, 0], extrapolate: 'clamp' }) }}>
           <Animated.View testID={`dudley-refresh-frame-${frame}`} style={{ width: SIZE, height: SIZE, overflow: 'hidden', transform: [
             { translateY: pop.interpolate({ inputRange: [0, 1], outputRange: [0, -14] }) },
             { scale: Animated.multiply(
