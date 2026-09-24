@@ -1,4 +1,4 @@
-import { partitionQuests } from '../questFeed';
+import { partitionQuests, removeQuestFromLists, replaceQuestInLists } from '../questFeed';
 import { Quest } from '@/types/database';
 
 const ME = 'me';
@@ -64,5 +64,36 @@ describe('partitionQuests', () => {
 
   it('passes completed quests through', () => {
     expect(lists.completedQuests).toEqual([completed]);
+  });
+});
+
+describe('removeQuestFromLists / replaceQuestInLists', () => {
+  const byMe = quest({ id: 'mine', creator_id: ME, assignee_id: ALICE, created_at: '2026-07-02T00:00:00Z' });
+  const other = quest({ id: 'other', creator_id: ALICE, assignee_id: ME });
+  const lists = partitionQuests([byMe, other], [], ME);
+
+  it('removes a quest from whichever section holds it', () => {
+    const next = removeQuestFromLists(lists, 'mine');
+    expect(next.byMe).toEqual([]);
+    expect(next.forMe).toEqual([other]);
+  });
+
+  it('returns the same lists when the id is unknown', () => {
+    expect(removeQuestFromLists(lists, 'nope')).toBe(lists);
+  });
+
+  it('re-partitions an edited quest (targeted -> open stays in byMe, newest first)', () => {
+    const edited = { ...byMe, assignee_id: null, mode: 'open' as const, description: 'new hint' };
+    const next = replaceQuestInLists(lists, edited, ME);
+    expect(next.byMe).toEqual([edited]);
+    expect(next.forMe).toEqual([other]);
+    expect(next.openForPack).toEqual([]);
+  });
+
+  it('places a completed edit in completedQuests', () => {
+    const done = { ...byMe, status: 'completed' as const, completed_at: '2026-07-03T00:00:00Z' };
+    const next = replaceQuestInLists(lists, done, ME);
+    expect(next.byMe).toEqual([]);
+    expect(next.completedQuests).toEqual([done]);
   });
 });

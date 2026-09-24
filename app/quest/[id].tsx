@@ -12,12 +12,29 @@ import { useAuth } from '@/hooks/useAuth';
 import { useCompleteQuest } from '@/hooks/useCompleteQuest';
 import { useJourney } from '@/hooks/useJourney';
 import { QUEST_COLUMNS_NO_LOCATION, QuestLists } from '@/hooks/useQuests';
-import { cacheGet, getQueue } from '@/lib/offline';
-import { applyPendingMutations, findQuestInLists } from '@/lib/questFeed';
+import { cacheGet, cacheSet, getQueue } from '@/lib/offline';
+import {
+  applyPendingMutations,
+  findQuestInLists,
+  removeQuestFromLists,
+  replaceQuestInLists,
+} from '@/lib/questFeed';
 import { usePackLookups } from '@/providers/AuthProvider';
 import { capturePhoto } from '@/lib/photos';
 import { Quest } from '@/types/database';
 import { QuestPhoto } from '@/components/QuestPhoto';
+import { QuestManage } from '@/components/QuestManage';
+import { canManageQuest } from '@/lib/questPermissions';
+
+// Keep the feed's last-good copy in step with a creator edit/delete so the
+// home screen doesn't flash stale data before its focus refresh lands.
+async function patchCachedLists(userId: string, patch: (lists: QuestLists) => QuestLists) {
+  const key = `quests:${userId}`;
+  const lists = await cacheGet<QuestLists>(key);
+  if (!lists) return;
+  const next = patch(lists);
+  if (next !== lists) await cacheSet(key, next);
+}
 
 export default function QuestDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -188,6 +205,20 @@ export default function QuestDetailScreen() {
               </Text>
             )}
           </>
+        )}
+
+        {user && canManageQuest(quest, user.id) && !capturedUri && (
+          <QuestManage
+            quest={quest}
+            onUpdated={(updated) => {
+              setQuest(updated);
+              patchCachedLists(user.id, (lists) => replaceQuestInLists(lists, updated, user.id));
+            }}
+            onDeleted={() => {
+              patchCachedLists(user.id, (lists) => removeQuestFromLists(lists, quest.id));
+              router.replace('/(tabs)');
+            }}
+          />
         )}
 
         {/* Completion flow for whoever may attempt this quest */}

@@ -73,5 +73,5 @@ grant usage on schema public, auth, storage to authenticated, anon;
 alter default privileges in schema public grant all on tables to authenticated;
 alter default privileges in schema public grant all on functions to authenticated;
 alter default privileges in schema public grant all on sequences to authenticated;
-grant select, insert on storage.objects to authenticated;
+grant select, insert, delete on storage.objects to authenticated;
 grant select on storage.buckets to authenticated;

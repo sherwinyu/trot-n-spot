@@ -49,6 +49,38 @@ export function findQuestInLists(lists: QuestLists, id: string): FeedQuest | nul
   return null;
 }
 
+// Drop a quest from every section (after a delete). Returns the same
+// object when nothing changed so callers can skip a cache write.
+export function removeQuestFromLists(lists: QuestLists, id: string): QuestLists {
+  if (!findQuestInLists(lists, id)) return lists;
+  return {
+    forMe: lists.forMe.filter((q) => q.id !== id),
+    openForPack: lists.openForPack.filter((q) => q.id !== id),
+    byMe: lists.byMe.filter((q) => q.id !== id),
+    aroundMyPacks: lists.aroundMyPacks.filter((q) => q.id !== id),
+    completedQuests: lists.completedQuests.filter((q) => q.id !== id),
+  };
+}
+
+// Swap in an edited quest. An edit can move it between sections (e.g.
+// reassigning targeted -> open), so re-partition rather than patch in place.
+export function replaceQuestInLists(lists: QuestLists, quest: Quest, userId: string): QuestLists {
+  const without = removeQuestFromLists(lists, quest.id);
+  const active = [
+    ...without.forMe,
+    ...without.openForPack,
+    ...without.byMe,
+    ...without.aroundMyPacks,
+  ];
+  const completed = without.completedQuests;
+  const newestFirst = (key: 'created_at' | 'completed_at') => (a: Quest, b: Quest) =>
+    (b[key] ?? '').localeCompare(a[key] ?? '');
+  if (quest.status === 'completed') {
+    return partitionQuests(active, [quest, ...completed].sort(newestFirst('completed_at')), userId);
+  }
+  return partitionQuests([quest, ...active].sort(newestFirst('created_at')), completed, userId);
+}
+
 function questFromPendingCreate(
   payload: Extract<PendingMutation, { type: 'create_quest' }>['payload']
 ): FeedQuest {
