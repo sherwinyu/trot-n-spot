@@ -7,8 +7,10 @@ wider … the release is like him popping up and over … as it's loading he'll
 shake.” Start from current main, preserving the recently merged Dudley behavior.
 
 - Pull at the top of Quests, History, or Groceries Explore/Receipts: the list makes room for
-  Dudley's face. Increasing pull distance reveals more of him and changes his
-  expression from curious to alert to wide-eyed. Reversing the pull reverses it.
+  Dudley's face. Increasing pull distance raises him up out from behind the list
+  edge (he climbs upward and grows slightly while the list slides down, rather
+  than being uncovered in place) and changes his expression from curious to
+  alert to wide-eyed. Reversing the pull reverses it.
 - Release at 96 points of resisted travel (160 points of finger travel): start
   the existing refresh immediately, pop up with a little overshoot, then shake
   with four alternating head/ear poses. One request per gesture.
@@ -69,7 +71,9 @@ ears settle. Paws stay planted. No overlap or motion lines. Real transparency.�
 - Optionally set `DUDLEY_ANIMATION_FRAMES` to capture the real interaction for a
   GIF; set `BROWSER_EXECUTABLE_PATH` for an installed Chromium executable.
 - Browser evidence in `docs/evidence/dudley-refresh/` covers partial pull, wide
-  eyes, pop, shake, reduced motion, History and Groceries. The script also checks
+  eyes, pop, shake, reduced motion, History and Groceries; `rise-demo.gif` is
+  the captured pull/pop/shake interaction (`peek-sniff-demo.gif` is the earlier
+  uncover-in-place version). The script also checks
   backoff, touch cancellation, no accidental card navigation, duplicate refresh,
   scrolling away from the top, failure/retry, and setup mode without refresh.
 - Hook tests cover threshold/backoff, request lifetime, gesture filtering,

@@ -138,10 +138,14 @@ export function DudleyRefresh({ onRefresh, disabled = false, hidden = false, ges
         </Pressable>
       </View>}
       <Animated.View testID="dudley-refresh-reveal" pointerEvents="none" style={[styles.reveal, { height, backgroundColor: c.background }]}>
-        <Animated.View style={{ position: 'absolute', alignSelf: 'center', top: height.interpolate({ inputRange: [0, 128, 164], outputRange: [-32, 0, 18], extrapolate: 'clamp' }) }}>
+        {/* Dudley climbs and grows while the list slides down, so he rises out from behind its edge. */}
+        <Animated.View style={{ position: 'absolute', alignSelf: 'center', top: height.interpolate({ inputRange: [0, 96, 128, 164], outputRange: [48, 8, 0, -8], extrapolate: 'clamp' }) }}>
           <Animated.View testID={`dudley-refresh-frame-${frame}`} style={{ width: SIZE, height: SIZE, overflow: 'hidden', transform: [
             { translateY: pop.interpolate({ inputRange: [0, 1], outputRange: [0, -14] }) },
-            { scale: pop.interpolate({ inputRange: [0, 1], outputRange: [1, 1.12] }) },
+            { scale: Animated.multiply(
+              height.interpolate({ inputRange: [0, 128], outputRange: [0.86, 1], extrapolate: 'clamp' }),
+              pop.interpolate({ inputRange: [0, 1], outputRange: [1, 1.12] }),
+            ) },
           ] }}>
             <Image source={atlas} accessible={false} contentFit="fill" transition={0} style={{ position: 'absolute', width: SIZE * 4, height: SIZE * 2, left: -(frame % 4) * SIZE, top: -Math.floor(frame / 4) * SIZE }} />
           </Animated.View>
