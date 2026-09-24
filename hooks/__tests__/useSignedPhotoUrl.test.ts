@@ -69,6 +69,28 @@ it('re-signs once when the current URL fails to load', async () => {
   expect(mockCreateSignedUrl).toHaveBeenCalledTimes(2);
 });
 
+it('drops a retry result once the hook has moved to another path', async () => {
+  let resolveRetry!: (value: unknown) => void;
+  mockCreateSignedUrl
+    .mockResolvedValueOnce({ data: { signedUrl: 'https://example.test/a-bad' }, error: null })
+    .mockReturnValueOnce(new Promise((resolve) => { resolveRetry = resolve; }))
+    .mockResolvedValueOnce({ data: { signedUrl: 'https://example.test/b' }, error: null });
+
+  const { result, rerender } = renderHook(({ path }: { path: string }) => useSignedPhotoUrl(path), {
+    initialProps: { path: 'a.jpg' },
+  });
+  await waitFor(() => expect(result.current.url).toBe('https://example.test/a-bad'));
+
+  act(() => result.current.reportLoadFailure('https://example.test/a-bad'));
+  rerender({ path: 'b.jpg' });
+  await waitFor(() => expect(result.current.url).toBe('https://example.test/b'));
+
+  await act(async () => {
+    resolveRetry({ data: { signedUrl: 'https://example.test/a-late' }, error: null });
+  });
+  expect(result.current.url).toBe('https://example.test/b');
+});
+
 it('does not re-sign a failed URL while offline', async () => {
   mockIsOnline = false;
   await cacheSet('signed-urls', {

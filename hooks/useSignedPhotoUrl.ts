@@ -25,10 +25,12 @@ export function useSignedPhotoUrl(storagePath: string | null): SignedPhotoUrl {
     () => peekSignedPhotoUrl(storagePath) ?? peekStaleSignedPhotoUrl(storagePath)
   );
   const retriedRef = useRef(false);
+  const currentPathRef = useRef(storagePath);
 
   useEffect(() => {
     let active = true;
     retriedRef.current = false;
+    currentPathRef.current = storagePath;
     if (!storagePath) {
       setUrl(null);
       return () => {
@@ -69,7 +71,7 @@ export function useSignedPhotoUrl(storagePath: string | null): SignedPhotoUrl {
       invalidateSignedPhotoUrl(storagePath, failedUrl);
       getSignedPhotoUrl(storagePath)
         .then((signedUrl) => {
-          if (signedUrl !== failedUrl) setUrl(signedUrl);
+          if (currentPathRef.current === storagePath && signedUrl !== failedUrl) setUrl(signedUrl);
         })
         .catch(() => {});
     },
