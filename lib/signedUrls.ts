@@ -1,10 +1,10 @@
 import { supabase } from '@/lib/supabase';
 import { cacheGet, cacheSet } from '@/lib/offline';
 
-// Long enough that a URL signed on one walk is still valid on the next
-// day's cold start; the bucket is private and paths are pack-scoped, so a
-// leaked URL only exposes a photo the holder could already see.
-export const SIGNED_URL_LIFETIME_SECONDS = 7 * 24 * 60 * 60;
+// Photos are immutable, so URLs can live long; expiry is handled by
+// re-signing on load failure. The bucket is private and paths are
+// pack-scoped, so a leaked URL only exposes a photo the holder could see.
+export const SIGNED_URL_LIFETIME_SECONDS = 365 * 24 * 60 * 60;
 const EXPIRY_MARGIN_MS = 60 * 60 * 1000;
 const PERSIST_KEY = 'signed-urls';
 

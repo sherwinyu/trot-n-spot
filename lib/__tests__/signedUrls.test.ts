@@ -85,15 +85,15 @@ describe('signed photo URL cache', () => {
     expect(mockCreateSignedUrl).toHaveBeenCalledTimes(1);
   });
 
-  it('signs URLs for a week so a next-day cold start still has a valid one', async () => {
+  it('signs URLs for a year since photos are immutable', async () => {
     mockCreateSignedUrl.mockResolvedValue({
-      data: { signedUrl: 'https://example.test/week' },
+      data: { signedUrl: 'https://example.test/year' },
       error: null,
     });
 
     await getSignedPhotoUrl('user/quest/thumbnail.jpg');
 
-    expect(SIGNED_URL_LIFETIME_SECONDS).toBe(7 * 24 * 60 * 60);
+    expect(SIGNED_URL_LIFETIME_SECONDS).toBe(365 * 24 * 60 * 60);
     expect(mockCreateSignedUrl).toHaveBeenCalledWith('user/quest/thumbnail.jpg', SIGNED_URL_LIFETIME_SECONDS);
   });
 
