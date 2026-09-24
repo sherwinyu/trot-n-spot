@@ -44,6 +44,7 @@ export function useManageQuest() {
       }
       const pack = packs.find((p) => p.id === quest.pack_id);
       if (
+        reassigning &&
         changes.assigneeId &&
         pack &&
         !pack.members.some((m) => m.user_id === changes.assigneeId)
@@ -55,17 +56,32 @@ export function useManageQuest() {
       setLoading(true);
       setError(null);
       try {
-        const { data, error: err } = await supabase
+        // Assignment only changes while the hunt is still on: a finder may
+        // complete the quest between opening the form and saving, so the
+        // status predicate is enforced server-side, not just from the copy
+        // loaded on screen. Hint-only edits leave assignment untouched.
+        let query = supabase
           .from('quests')
-          .update({
-            description: changes.description,
-            assignee_id: changes.assigneeId,
-            mode: changes.assigneeId ? 'targeted' : 'open',
-          })
-          .eq('id', quest.id)
-          .select(QUEST_COLUMNS_NO_LOCATION)
-          .single();
+          .update(
+            reassigning
+              ? {
+                  description: changes.description,
+                  assignee_id: changes.assigneeId,
+                  mode: changes.assigneeId ? 'targeted' : 'open',
+                }
+              : { description: changes.description }
+          )
+          .eq('id', quest.id);
+        if (reassigning) query = query.eq('status', 'active');
+        const { data, error: err } = await query.select(QUEST_COLUMNS_NO_LOCATION).maybeSingle();
         if (err) throw err;
+        if (!data) {
+          throw new Error(
+            reassigning
+              ? 'This quest was just completed — reload to see who found it'
+              : 'Quest not found or already deleted'
+          );
+        }
         return data as Quest;
       } catch (err) {
         return fail(err, 'Failed to update quest');

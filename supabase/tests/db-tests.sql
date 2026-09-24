@@ -444,6 +444,17 @@ begin
   assert (select description from quests where id = '22222222-2222-2222-2222-222222222222') = 'edited by creator', 'description updated';
   assert (select mode from quests where id = '22222222-2222-2222-2222-222222222222') = 'open', 'reassigned to the pack';
 
+  -- Client guards reassignment with status = 'active' so a hunt completed
+  -- mid-edit keeps its finder/assignee pairing (quest 5 is completed).
+  update quests set assignee_id = null, mode = 'open'
+    where id = '55555555-5555-5555-5555-555555555555' and status = 'active';
+  get diagnostics affected = row_count;
+  assert affected = 0, 'reassign of a completed quest is a no-op under the active guard';
+  update quests set description = 'hint edit on completed quest'
+    where id = '55555555-5555-5555-5555-555555555555';
+  get diagnostics affected = row_count;
+  assert affected = 1, 'creator can still edit the hint of a completed quest';
+
   insert into storage.objects (bucket_id, name)
   values ('quest-photos', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/22222222-2222-2222-2222-222222222222/original.jpg');
   delete from storage.objects
