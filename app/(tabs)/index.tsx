@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo } from 'react';
+import { memo, useCallback, useEffect, useMemo } from 'react';
 import { FlatList, RefreshControl, StyleSheet, TouchableOpacity } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Dudley, DudleyLoading } from '@/components/dudley/Dudley';
@@ -9,8 +9,10 @@ import Colors from '@/constants/Colors';
 import { useQuests } from '@/hooks/useQuests';
 import { feedStatusMessage } from '@/lib/feedStatus';
 import { getTimeAgo } from '@/lib/format';
+import { setFeedFocused } from '@/lib/notifications';
 import { FeedQuest } from '@/lib/questFeed';
 import { useAuth, usePackLookups } from '@/providers/AuthProvider';
+import { useNotifications } from '@/providers/NotificationProvider';
 import { useSync } from '@/providers/SyncProvider';
 
 type FeedRow =
@@ -100,6 +102,7 @@ export default function FeedScreen() {
   const { pendingCount, isOnline } = useSync();
   const { packs } = useAuth();
   const { memberNames, packNames } = usePackLookups();
+  const { receivedCount } = useNotifications();
 
   const rows = useMemo<FeedRow[]>(() => {
     const next: FeedRow[] = [];
@@ -177,9 +180,16 @@ export default function FeedScreen() {
   // Tab screens stay mounted, so refetch whenever the feed regains focus.
   useFocusEffect(
     useCallback(() => {
+      setFeedFocused(true);
       refresh();
+      return () => setFeedFocused(false);
     }, [refresh])
   );
+
+  // A push means a packmate just did something; pull it in.
+  useEffect(() => {
+    if (receivedCount > 0) refresh();
+  }, [receivedCount, refresh]);
 
   return (
     <FlatList

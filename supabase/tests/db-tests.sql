@@ -418,7 +418,60 @@ begin
   values ('facadefa-cade-4ace-8ade-000000000001', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/trigger-test/original.jpg', 'trigger resilience test');
   raise notice 'PASS: quest insert survives push-webhook dispatch failure';
 end $$;
+-- Pack joins now dispatch too, and go through the RPC as a real user.
+set role authenticated;
+select test_login('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee');
+do $$
+declare
+  result jsonb;
+begin
+  result := join_pack('WOOF01');
+  assert result->>'error' is null, 'join_pack with webhook configured: ' || coalesce(result->>'error', '');
+  raise notice 'PASS: pack join survives push-webhook dispatch failure';
+end $$;
+reset role;
 delete from app_config where key = 'push_webhook_url';
+
+-- ============ push_tokens + push_enabled ============
+do $$
+begin
+  assert not exists (
+    select 1 from information_schema.columns
+    where table_name = 'profiles' and column_name = 'push_token'
+  ), 'profiles.push_token dropped';
+  assert (select bool_and(push_enabled) from profiles), 'push_enabled defaults on';
+  raise notice 'PASS: profiles.push_token replaced by push_enabled';
+end $$;
+
+set role authenticated;
+select test_login('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+insert into push_tokens (token, user_id, platform)
+values ('ExponentPushToken[sherwin-phone]', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'ios'),
+       ('ExponentPushToken[sherwin-tablet]', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'android');
+-- Re-registering the same device is an upsert, not a conflict.
+insert into push_tokens (token, user_id, platform)
+values ('ExponentPushToken[sherwin-phone]', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'ios')
+on conflict (token) do update set user_id = excluded.user_id, platform = excluded.platform;
+do $$
+begin
+  assert (select count(*) from push_tokens) = 2, 'sherwin keeps one row per device';
+  begin
+    insert into push_tokens (token, user_id, platform)
+    values ('ExponentPushToken[forged]', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'ios');
+    raise exception 'sherwin registered a token for nadia';
+  exception when insufficient_privilege or check_violation then null;
+  end;
+  update profiles set push_enabled = false where id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+  assert (select push_enabled from profiles where id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa') = false, 'user can mute push';
+  raise notice 'PASS: push_tokens RLS + push_enabled toggle';
+end $$;
+
+select test_login('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
+do $$
+begin
+  assert (select count(*) from push_tokens) = 0, 'nadia cannot see sherwin''s tokens';
+  raise notice 'PASS: push tokens are private to their owner';
+end $$;
 
 reset role;
 select 'ALL DB TESTS PASSED' as result;

@@ -8,11 +8,13 @@ import { useCreateQuest } from '@/hooks/useCreateQuest';
 import { useJourney } from '@/hooks/useJourney';
 import { capturePhoto } from '@/lib/photos';
 import { notify } from '@/lib/notify';
+import { useNotifications } from '@/providers/NotificationProvider';
 
 export default function CreateScreen() {
   const { user, packs } = useAuth();
   const { createQuest, loading, error } = useCreateQuest();
   const { activeJourney } = useJourney();
+  const { maybeAskForPush } = useNotifications();
   const c = Colors[useColorScheme() ?? 'light'];
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [description, setDescription] = useState('');
@@ -66,7 +68,8 @@ export default function CreateScreen() {
           ? "You're offline — it will send when you're back online."
           : recipientName
             ? `${recipientName} has a new quest to find.`
-            : `Your pack has a new open quest — first to find it wins.`
+            : `Your pack has a new open quest — first to find it wins.`,
+        maybeAskForPush
       );
       setPhotoUri(null);
       setDescription('');
