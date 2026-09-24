@@ -473,5 +473,15 @@ begin
   raise notice 'PASS: push tokens are private to their owner';
 end $$;
 
+-- Nadia signs in on Sherwin's tablet: the RPC re-homes the device token.
+select register_push_token('ExponentPushToken[sherwin-tablet]', 'android');
+do $$
+begin
+  assert (select user_id from push_tokens where token = 'ExponentPushToken[sherwin-tablet]')
+         = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'token re-homed to the signed-in user';
+  assert (select count(*) from push_tokens) = 1, 'nadia now owns exactly the tablet';
+  raise notice 'PASS: register_push_token claims a device across accounts';
+end $$;
+
 reset role;
 select 'ALL DB TESTS PASSED' as result;

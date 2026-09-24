@@ -52,15 +52,17 @@ export async function getExpoPushToken(): Promise<string | null> {
 }
 
 // Registers this device for the signed-in user. Safe to call on every
-// launch: the token is the primary key, so re-registering just bumps
-// updated_at (and re-homes the token if a different account signs in).
-export async function syncPushToken(userId: string): Promise<string | null> {
+// launch; the RPC re-homes the token if a different account signed in
+// on this device. Throws on a failed write so callers can log it.
+export async function syncPushToken(): Promise<string | null> {
   if ((await getPushPermission()) !== 'granted') return null;
   const token = await getExpoPushToken();
   if (!token) return null;
-  await supabase
-    .from('push_tokens')
-    .upsert({ token, user_id: userId, platform: Platform.OS === 'ios' ? 'ios' : 'android' });
+  const { error } = await supabase.rpc('register_push_token', {
+    p_token: token,
+    p_platform: Platform.OS === 'ios' ? 'ios' : 'android',
+  });
+  if (error) throw error;
   return token;
 }
 

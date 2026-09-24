@@ -63,9 +63,9 @@ diverged from the plan:
   any completion → creator, pack join → existing members. Someone else
   completing an open quest is feed-only.
 
-Remaining (not blocking daily use): Google Sign-In setup, push `app_config`
-rows + edge function deploy on the hosted project, end-to-end push
-verification on physical devices.
+Remaining (not blocking daily use): Google Sign-In setup, Firebase/FCM
+credentials for Android push, end-to-end push verification on physical
+devices (the hosted trigger, `app_config` rows and edge function are live).
 
 ---
 

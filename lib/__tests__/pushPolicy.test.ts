@@ -70,6 +70,19 @@ describe('planNotification', () => {
     });
   });
 
+  it('completion still reaches a creator who has left the pack', () => {
+    const plan = planNotification(
+      {
+        type: 'UPDATE',
+        table: 'quests',
+        record: quest({ status: 'completed', finder_id: NADIA }),
+        old_record: quest(),
+      },
+      { ...ctx, actorName: 'Nadia', packMemberIds: [NADIA, CAROL] }
+    );
+    expect(plan?.recipientIds).toEqual([SHERWIN]);
+  });
+
   it('ignores quest updates that are not the transition to completed', () => {
     const completed = quest({ status: 'completed', finder_id: NADIA });
     expect(

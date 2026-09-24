@@ -111,8 +111,9 @@ export function planNotification(
       };
     }
 
+    // The creator is told even if they have since left the pack.
     return {
-      recipientIds: others.filter((id) => id === quest.creator_id),
+      recipientIds: quest.creator_id === event.actorId ? [] : [quest.creator_id],
       title: `${actor} found your quest`,
       body: clip(description ?? 'Your quest was found!'),
       data: { type: 'quest_completed', questId: quest.id, packId: quest.pack_id },

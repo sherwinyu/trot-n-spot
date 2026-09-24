@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { Linking, Platform } from 'react-native';
+import { AppState, Linking, Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/providers/AuthProvider';
@@ -63,16 +63,22 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   const handledColdStart = useRef(false);
   const userId = user?.id ?? null;
 
+  // Re-read on foreground too: the user may have flipped the switch in
+  // system Settings and come straight back.
   useEffect(() => {
     if (Platform.OS === 'web') return;
     getPushPermission().then(setPermission);
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') getPushPermission().then(setPermission);
+    });
+    return () => sub.remove();
   }, []);
 
   // Keep this device registered whenever a user is signed in and has
   // already granted permission. Never prompts.
   useEffect(() => {
     if (!userId || Platform.OS === 'web' || permission !== 'granted') return;
-    syncPushToken(userId).catch(() => {});
+    syncPushToken().catch((e) => console.warn('push token sync failed', e));
   }, [userId, permission]);
 
   useEffect(() => {
@@ -107,7 +113,9 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   const requestPermission = useCallback(async () => {
     const status = await requestPushPermission();
     setPermission(status);
-    if (status === 'granted' && userId) await syncPushToken(userId).catch(() => {});
+    if (status === 'granted' && userId) {
+      await syncPushToken().catch((e) => console.warn('push token sync failed', e));
+    }
     return status;
   }, [userId]);
 
