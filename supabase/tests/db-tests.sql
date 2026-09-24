@@ -407,6 +407,98 @@ begin
   raise notice 'PASS: outsider cannot read another pack''s quest photo variants';
 end $$;
 
+-- ============ creator edit / delete (013) ============
+-- Quest 2: creator = Nadia (b), assignee = Sherwin (a). Only the creator
+-- may edit or delete; a packmate (even the assignee) and a stranger get 0 rows.
+select test_login('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+do $$
+declare affected int;
+begin
+  update quests set description = 'assignee edit' where id = '22222222-2222-2222-2222-222222222222';
+  get diagnostics affected = row_count;
+  assert affected = 0, 'assignee cannot edit a packmate''s quest';
+  delete from quests where id = '22222222-2222-2222-2222-222222222222';
+  get diagnostics affected = row_count;
+  assert affected = 0, 'assignee cannot delete a packmate''s quest';
+  raise notice 'PASS: non-creator packmate cannot edit or delete quests';
+end $$;
+
+select test_login('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee');
+do $$
+declare affected int;
+begin
+  delete from quests where id = '22222222-2222-2222-2222-222222222222';
+  get diagnostics affected = row_count;
+  assert affected = 0, 'stranger delete must affect 0 rows';
+  raise notice 'PASS: stranger cannot delete quests';
+end $$;
+
+select test_login('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
+do $$
+declare affected int;
+begin
+  update quests set description = 'edited by creator', assignee_id = null, mode = 'open'
+    where id = '22222222-2222-2222-2222-222222222222';
+  get diagnostics affected = row_count;
+  assert affected = 1, 'creator edits own quest';
+  assert (select description from quests where id = '22222222-2222-2222-2222-222222222222') = 'edited by creator', 'description updated';
+  assert (select mode from quests where id = '22222222-2222-2222-2222-222222222222') = 'open', 'reassigned to the pack';
+
+  -- Client guards reassignment with status = 'active' so a hunt completed
+  -- mid-edit keeps its finder/assignee pairing (quest 5 is completed).
+  update quests set assignee_id = null, mode = 'open'
+    where id = '55555555-5555-5555-5555-555555555555' and status = 'active';
+  get diagnostics affected = row_count;
+  assert affected = 0, 'reassign of a completed quest is a no-op under the active guard';
+  update quests set description = 'hint edit on completed quest'
+    where id = '55555555-5555-5555-5555-555555555555';
+  get diagnostics affected = row_count;
+  assert affected = 1, 'creator can still edit the hint of a completed quest';
+
+  -- Reassigning to someone outside the pack is rejected at the DB even
+  -- though the creator passes the row-level USING check (Eve is a stranger).
+  begin
+    update quests set assignee_id = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', mode = 'targeted'
+      where id = '22222222-2222-2222-2222-222222222222';
+    raise exception 'reassign to non-member should have been rejected';
+  exception when insufficient_privilege then
+    null;
+  end;
+  assert (select assignee_id from quests where id = '22222222-2222-2222-2222-222222222222') is null, 'assignee unchanged after rejected reassign';
+
+  -- The seeded photo_path of quest 2 is this object: while the row exists
+  -- the object is still referenced and must survive a delete attempt.
+  insert into storage.objects (bucket_id, name)
+  values ('quest-photos', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/22222222-2222-2222-2222-222222222222/original.jpg');
+  delete from storage.objects
+    where name = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/22222222-2222-2222-2222-222222222222/original.jpg';
+  get diagnostics affected = row_count;
+  assert affected = 0, 'photo still referenced by a quest cannot be deleted';
+
+  delete from quests where id = '22222222-2222-2222-2222-222222222222';
+  get diagnostics affected = row_count;
+  assert affected = 1, 'creator deletes own quest';
+  assert (select count(*) from quests where id = '22222222-2222-2222-2222-222222222222') = 0, 'quest gone';
+
+  delete from storage.objects
+    where name = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/22222222-2222-2222-2222-222222222222/original.jpg';
+  get diagnostics affected = row_count;
+  assert affected = 1, 'creator removes own photo object once unreferenced';
+  raise notice 'PASS: creator can edit and delete own quest';
+end $$;
+
+-- Photos in someone else's folder are off limits even for pack members
+select test_login('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+do $$
+declare affected int;
+begin
+  delete from storage.objects
+    where name = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/11111111-1111-1111-1111-111111111111/full.jpg';
+  get diagnostics affected = row_count;
+  assert affected = 0, 'packmate cannot delete another user''s photo';
+  raise notice 'PASS: storage deletes restricted to own folder';
+end $$;
+
 -- ============ push trigger resilience ============
 reset role;
 -- With webhook config present but pg_net absent, quest writes must
