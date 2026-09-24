@@ -19,7 +19,7 @@ export function QuestPhoto({
   fallback = null,
   accessibilityLabel,
 }: QuestPhotoProps) {
-  const signedUrl = useSignedPhotoUrl(storagePath);
+  const { url: signedUrl, reportLoadFailure } = useSignedPhotoUrl(storagePath);
   const [failed, setFailed] = useState(false);
   const source = useMemo(() => {
     if (localUri) return { uri: localUri };
@@ -33,8 +33,11 @@ export function QuestPhoto({
 
   if (!source || failed) return <>{fallback}</>;
 
+  // Keyed by URI so a late error from a superseded (expired) URL can't hide
+  // the image that replaced it.
   return (
     <Image
+      key={source.uri}
       source={source}
       style={style}
       contentFit="cover"
@@ -42,7 +45,10 @@ export function QuestPhoto({
       recyclingKey={localUri ?? storagePath ?? undefined}
       transition={100}
       accessibilityLabel={accessibilityLabel}
-      onError={() => setFailed(true)}
+      onError={() => {
+        setFailed(true);
+        if (!localUri) reportLoadFailure(source.uri);
+      }}
     />
   );
 }

@@ -1,8 +1,11 @@
 import { supabase } from '@/lib/supabase';
 import { cacheGet, cacheSet } from '@/lib/offline';
 
-const SIGNED_URL_LIFETIME_SECONDS = 6 * 60 * 60;
-const EXPIRY_MARGIN_MS = 5 * 60 * 1000;
+// Photos are immutable, so URLs can live long; expiry is handled by
+// re-signing on load failure. The bucket is private and paths are
+// pack-scoped, so a leaked URL only exposes a photo the holder could see.
+export const SIGNED_URL_LIFETIME_SECONDS = 365 * 24 * 60 * 60;
+const EXPIRY_MARGIN_MS = 60 * 60 * 1000;
 const PERSIST_KEY = 'signed-urls';
 
 type CachedSignedUrl = {
@@ -93,6 +96,14 @@ export async function getSignedPhotoUrl(storagePath: string): Promise<string> {
 
   inFlightRequests.set(storagePath, request);
   return request;
+}
+
+// Drops a URL that failed to load (expired early, revoked, or signed with a
+// stale session) so the next request re-signs instead of retrying it.
+export function invalidateSignedPhotoUrl(storagePath: string, failedUrl: string): void {
+  if (signedUrlCache.get(storagePath)?.url !== failedUrl) return;
+  signedUrlCache.delete(storagePath);
+  schedulePersist();
 }
 
 // In-memory only; the persisted copy is removed with the other

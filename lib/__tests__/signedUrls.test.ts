@@ -13,7 +13,9 @@ import {
   clearSignedPhotoUrlCache,
   getSignedPhotoUrl,
   hydrateSignedPhotoUrlCache,
+  invalidateSignedPhotoUrl,
   peekSignedPhotoUrl,
+  SIGNED_URL_LIFETIME_SECONDS,
   peekStaleSignedPhotoUrl,
 } from '../signedUrls';
 import { cacheGet, cacheSet } from '../offline';
@@ -44,7 +46,7 @@ describe('signed photo URL cache', () => {
 
   it('hydrates persisted URLs and exposes expired ones as stale', async () => {
     await cacheSet('signed-urls', {
-      'user/quest/fresh.jpg': { url: 'https://example.test/fresh', expiresAt: Date.now() + 60 * 60 * 1000 },
+      'user/quest/fresh.jpg': { url: 'https://example.test/fresh', expiresAt: Date.now() + 24 * 60 * 60 * 1000 },
       'user/quest/expired.jpg': { url: 'https://example.test/expired', expiresAt: Date.now() - 1000 },
     });
 
@@ -81,6 +83,34 @@ describe('signed photo URL cache', () => {
     expect(second).toBe(first);
     expect(await getSignedPhotoUrl('user/quest/thumbnail.jpg')).toBe(first);
     expect(mockCreateSignedUrl).toHaveBeenCalledTimes(1);
+  });
+
+  it('signs URLs for a year since photos are immutable', async () => {
+    mockCreateSignedUrl.mockResolvedValue({
+      data: { signedUrl: 'https://example.test/year' },
+      error: null,
+    });
+
+    await getSignedPhotoUrl('user/quest/thumbnail.jpg');
+
+    expect(SIGNED_URL_LIFETIME_SECONDS).toBe(365 * 24 * 60 * 60);
+    expect(mockCreateSignedUrl).toHaveBeenCalledWith('user/quest/thumbnail.jpg', SIGNED_URL_LIFETIME_SECONDS);
+  });
+
+  it('re-signs after a URL is invalidated, but ignores an already-replaced URL', async () => {
+    mockCreateSignedUrl
+      .mockResolvedValueOnce({ data: { signedUrl: 'https://example.test/one' }, error: null })
+      .mockResolvedValueOnce({ data: { signedUrl: 'https://example.test/two' }, error: null });
+
+    expect(await getSignedPhotoUrl('user/quest/a.jpg')).toBe('https://example.test/one');
+
+    invalidateSignedPhotoUrl('user/quest/a.jpg', 'https://example.test/one');
+    expect(peekStaleSignedPhotoUrl('user/quest/a.jpg')).toBeNull();
+    expect(await getSignedPhotoUrl('user/quest/a.jpg')).toBe('https://example.test/two');
+
+    invalidateSignedPhotoUrl('user/quest/a.jpg', 'https://example.test/one');
+    expect(peekSignedPhotoUrl('user/quest/a.jpg')).toBe('https://example.test/two');
+    expect(mockCreateSignedUrl).toHaveBeenCalledTimes(2);
   });
 
   it('does not repopulate a cleared cache from an old request', async () => {
