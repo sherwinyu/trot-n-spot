@@ -14,7 +14,7 @@ const assets = {
 };
 export type DudleyMood = keyof typeof assets;
 
-function useMotionAllowed() {
+export function useMotionAllowed() {
   const focused = useIsFocused();
   const [reduced, setReduced] = useState(true);
   const [foreground, setForeground] = useState(AppState.currentState === 'active');
