@@ -32,8 +32,12 @@ shake.” Start from current main, preserving the recently merged Dudley behavio
 `DudleyRefresh` supplies scroll props to the existing FlatList/ScrollView, and
 the list itself owns the gesture on native, so a standard pull from anywhere on
 the list works: iOS follows the list's own bounce (`contentOffset.y < 0`) and
-refreshes on release past the threshold; Android mounts an invisible
-`RefreshControl` purely for pull detection. Web uses non-passive touch handling
+refreshes on release past the threshold; Android has no over-scroll, so a
+pull that starts with the list at its top is claimed by a capture
+`PanResponder` once the touch is clearly vertical (>8px, so taps and short
+drifts still reach cards and buttons) and Dudley follows the touch distance
+from then on, with an invisible `RefreshControl` as a fallback if the native
+scroll wins the gesture. Web uses non-passive touch handling
 only for eligible pulls and also supports mouse dragging. Ordinary scrolling and
 list virtualization remain in place. All Dudley animations run on the JS driver,
 since the pop transform shares nodes with the layout-driven reveal height.
