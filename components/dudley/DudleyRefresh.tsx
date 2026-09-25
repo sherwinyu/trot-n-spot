@@ -1,5 +1,5 @@
-import { ReactNode, useEffect, useRef, useState } from 'react';
-import { Animated, Platform, Pressable, RefreshControl, ScrollViewProps, StyleSheet, Text, View, ViewStyle } from 'react-native';
+import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, PanResponder, Platform, Pressable, RefreshControl, ScrollViewProps, StyleSheet, Text, TextInput, View, ViewStyle } from 'react-native';
 import { Image } from 'expo-image';
 import { useIsFocused } from '@react-navigation/native';
 import { useColorScheme } from '@/components/useColorScheme';
@@ -20,8 +20,10 @@ type Props = {
 /**
  * A shared replacement for RefreshControl on feed, history and groceries.
  * Native lists keep their own scroll gesture: iOS shows Dudley in the over-scroll
- * bounce, Android uses an invisible RefreshControl so a standard pull anywhere
- * on the list triggers him. Web pulls are tracked from DOM touch/mouse events.
+ * bounce. Android has no bounce, so a pull that starts at the top of the list is
+ * claimed by a capture PanResponder and tracked by touch distance (an invisible
+ * RefreshControl remains as the fallback when the native scroll wins the race).
+ * Web pulls are tracked from DOM touch/mouse events.
  */
 export function DudleyRefresh({ onRefresh, disabled = false, hidden = false, gesturesEnabled = true, children }: Props) {
   const focused = useIsFocused();
@@ -106,6 +108,24 @@ export function DudleyRefresh({ onRefresh, disabled = false, hidden = false, ges
     };
   }, [controls]);
 
+  const android = Platform.OS === 'android' && gesturesEnabled && !hidden;
+  const pan = useMemo(() => !android ? undefined : PanResponder.create({
+    onStartShouldSetPanResponderCapture: (_, g) => {
+      if (g.numberActiveTouches !== 1 || TextInput.State.currentlyFocusedInput()) controls.cancel();
+      else controls.begin();
+      return false;
+    },
+    onMoveShouldSetPanResponderCapture: (_, g) => {
+      if (TextInput.State.currentlyFocusedInput()) { controls.cancel(); return false; }
+      return controls.canMove(g.dx, g.dy, g.numberActiveTouches, 2);
+    },
+    onPanResponderGrant: (_, g) => controls.move(g.dy),
+    onPanResponderMove: (_, g) => { if (g.numberActiveTouches !== 1) controls.cancel(); else controls.move(g.dy); },
+    onPanResponderRelease: controls.release,
+    onPanResponderTerminate: controls.cancel,
+    onPanResponderTerminationRequest: () => false,
+  }), [android, controls]);
+
   const frame = !motion ? 0 : phase === 'pop' ? 3 : phase === 'refresh'
     ? [4, 5, 6, 7, 4, 5, 6, 7][shake]
     : distance < 42 ? 0 : ready ? 2 : 1;
@@ -121,7 +141,7 @@ export function DudleyRefresh({ onRefresh, disabled = false, hidden = false, ges
           <Text style={{ color: c.tint, opacity: disabled || busy ? 0.5 : 1, fontSize: 13, fontWeight: '600' }}>Refresh</Text>
         </Pressable>
       </View>}
-      <View style={styles.body}>
+      <View style={styles.body} {...pan?.panHandlers}>
         <Animated.View testID="dudley-refresh-reveal" style={[styles.reveal, { height, backgroundColor: c.background }]} />
         {/* Dudley climbs and grows while the list slides down (the reveal spacer, or the list's own
             over-scroll bounce), so he rises out from behind its edge; once fully out his paws ride on
@@ -148,7 +168,8 @@ export function DudleyRefresh({ onRefresh, disabled = false, hidden = false, ges
           bounces: Platform.OS === 'ios',
           overScrollMode: 'never',
           ...(Platform.OS === 'ios' ? { onScrollBeginDrag: controls.beginDrag, onScrollEndDrag: controls.release } : {}),
-          ...(Platform.OS === 'android' && gesturesEnabled && !hidden ? {
+          ...(android ? {
+            scrollEnabled: phase !== 'pull',
             // Off-screen and transparent: only the native pull detection is wanted.
             refreshControl: <RefreshControl refreshing={busy} enabled={!disabled} onRefresh={() => void controls.refresh()}
               colors={['transparent']} progressBackgroundColor="transparent" progressViewOffset={-200} />,

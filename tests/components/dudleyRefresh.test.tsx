@@ -1,6 +1,6 @@
 import React from 'react';
 import { act, fireEvent, render } from '@testing-library/react-native';
-import { Animated, Platform, RefreshControl, ScrollViewProps, View } from 'react-native';
+import { Animated, GestureResponderEvent, PanResponder, PanResponderCallbacks, PanResponderGestureState, Platform, RefreshControl, ScrollViewProps, View } from 'react-native';
 import { DudleyRefresh } from '@/components/dudley/DudleyRefresh';
 
 jest.mock('@react-navigation/native', () => ({ useIsFocused: () => true }));
@@ -56,4 +56,29 @@ it('Android: a standard native pull anywhere on the list triggers the refresh, u
   expect(refresh).toHaveBeenCalledTimes(1);
   rerender(<DudleyRefresh onRefresh={refresh} gesturesEnabled={false}>{children}</DudleyRefresh>);
   expect(scroll.refreshControl).toBeUndefined();
+});
+
+it('Android: a pull from the top of the list shows Dudley progressively before the threshold, then refreshes on release', async () => {
+  jest.replaceProperty(Platform, 'OS', 'android');
+  const refresh = jest.fn().mockResolvedValue(undefined);
+  let config: PanResponderCallbacks = {};
+  jest.spyOn(PanResponder, 'create').mockImplementation(callbacks => { config = callbacks; return { panHandlers: {} }; });
+  const { queryByText } = render(<DudleyRefresh onRefresh={refresh}>{children}</DudleyRefresh>);
+  const g = (dy: number, touches = 1) => ({ dx: 0, dy, numberActiveTouches: touches } as PanResponderGestureState);
+  const e = {} as GestureResponderEvent;
+  config.onStartShouldSetPanResponderCapture!(e, g(0));
+  // Claimed before the list's own touch slop, so Dudley tracks the drag from the first few px.
+  expect(config.onMoveShouldSetPanResponderCapture!(e, g(4))).toBe(true);
+  act(() => { config.onPanResponderGrant!(e, g(4)); config.onPanResponderMove!(e, g(60)); });
+  expect(queryByText('A little further…')).not.toBeNull();
+  expect(scroll.scrollEnabled).toBe(false);
+  act(() => { config.onPanResponderMove!(e, g(180)); });
+  expect(queryByText('Let go — Dudley’s ready!')).not.toBeNull();
+  await act(async () => { config.onPanResponderRelease!(e, g(180)); });
+  expect(refresh).toHaveBeenCalledTimes(1);
+  expect(scroll.scrollEnabled).toBe(true);
+  // A drag that begins mid-list is left to the native scroll.
+  act(() => { scroll.onScroll?.(scrolled(300)); });
+  config.onStartShouldSetPanResponderCapture!(e, g(0));
+  expect(config.onMoveShouldSetPanResponderCapture!(e, g(40))).toBe(false);
 });

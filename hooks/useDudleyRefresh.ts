@@ -72,9 +72,11 @@ export function useDudleyRefresh(onRefresh: () => Promise<unknown>, disabled: bo
       begin: () => {
         eligible.current = latest.current.gesturesEnabled && !inFlight.current && !latest.current.disabled && latest.current.focused && offset.current <= 1;
       },
-      canMove: (dx: number, dy: number, touches = 1) => {
+      // `slop` is how far a touch travels before it counts as a pull; Android must claim
+      // before the list's own touch slop (~8dp) or the native scroll wins the gesture.
+      canMove: (dx: number, dy: number, touches = 1, slop = 8) => {
         if (touches !== 1 || Math.abs(dx) > Math.max(10, Math.abs(dy))) eligible.current = false;
-        return eligible.current && !inFlight.current && !latest.current.disabled && dy > 8 && dy > Math.abs(dx) * 1.3;
+        return eligible.current && !inFlight.current && !latest.current.disabled && dy > slop && dy > Math.abs(dx) * 1.3;
       },
       move: (dy: number) => {
         if (!eligible.current || inFlight.current) return;
