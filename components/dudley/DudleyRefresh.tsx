@@ -21,8 +21,9 @@ type Props = {
  * A shared replacement for RefreshControl on feed, history and groceries.
  * Native lists keep their own scroll gesture: iOS shows Dudley in the over-scroll
  * bounce. Android has no bounce, so a pull that starts at the top of the list is
- * claimed by a capture PanResponder and tracked by touch distance (an invisible
- * RefreshControl remains as the fallback when the native scroll wins the race).
+ * claimed by a capture PanResponder once it is clearly vertical (taps and short
+ * drifts stay with the list's children) and tracked by touch distance; an
+ * invisible RefreshControl remains as the fallback when the native scroll wins.
  * Web pulls are tracked from DOM touch/mouse events.
  */
 export function DudleyRefresh({ onRefresh, disabled = false, hidden = false, gesturesEnabled = true, children }: Props) {
@@ -117,7 +118,7 @@ export function DudleyRefresh({ onRefresh, disabled = false, hidden = false, ges
     },
     onMoveShouldSetPanResponderCapture: (_, g) => {
       if (TextInput.State.currentlyFocusedInput()) { controls.cancel(); return false; }
-      return controls.canMove(g.dx, g.dy, g.numberActiveTouches, 2);
+      return controls.canMove(g.dx, g.dy, g.numberActiveTouches);
     },
     onPanResponderGrant: (_, g) => controls.move(g.dy),
     onPanResponderMove: (_, g) => { if (g.numberActiveTouches !== 1) controls.cancel(); else controls.move(g.dy); },

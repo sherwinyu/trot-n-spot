@@ -67,9 +67,10 @@ it('Android: a pull from the top of the list shows Dudley progressively before t
   const g = (dy: number, touches = 1) => ({ dx: 0, dy, numberActiveTouches: touches } as PanResponderGestureState);
   const e = {} as GestureResponderEvent;
   config.onStartShouldSetPanResponderCapture!(e, g(0));
-  // Claimed before the list's own touch slop, so Dudley tracks the drag from the first few px.
-  expect(config.onMoveShouldSetPanResponderCapture!(e, g(4))).toBe(true);
-  act(() => { config.onPanResponderGrant!(e, g(4)); config.onPanResponderMove!(e, g(60)); });
+  // A short drift stays a tap for the list's children; a clear vertical pull is claimed.
+  expect(config.onMoveShouldSetPanResponderCapture!(e, g(4))).toBe(false);
+  expect(config.onMoveShouldSetPanResponderCapture!(e, g(12))).toBe(true);
+  act(() => { config.onPanResponderGrant!(e, g(12)); config.onPanResponderMove!(e, g(60)); });
   expect(queryByText('A little further…')).not.toBeNull();
   expect(scroll.scrollEnabled).toBe(false);
   act(() => { config.onPanResponderMove!(e, g(180)); });
