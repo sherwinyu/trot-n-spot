@@ -3,11 +3,17 @@ import { Animated, AppState } from 'react-native';
 
 export const PULL_THRESHOLD = 96;
 export const REFRESH_HEIGHT = 128;
+export const MAX_PULL = 164;
 export type RefreshPhase = 'idle' | 'pull' | 'pop' | 'refresh' | 'settle';
 
-/** Owns gesture eligibility and the request lifetime, independently of the artwork. */
+/**
+ * Owns gesture eligibility and the request lifetime, independently of the artwork.
+ * `height` is the room the list makes for Dudley; `bounce` mirrors the native
+ * over-scroll of the list itself (iOS), so the two add up to how far he is out.
+ */
 export function useDudleyRefresh(onRefresh: () => Promise<unknown>, disabled: boolean, motion: boolean, focused: boolean, gesturesEnabled = true) {
   const height = useRef(new Animated.Value(0)).current;
+  const bounce = useRef(new Animated.Value(0)).current;
   const [phase, setPhase] = useState<RefreshPhase>('idle');
   const [distance, setDistance] = useState(0);
   const [error, setError] = useState(false);
@@ -30,6 +36,8 @@ export function useDudleyRefresh(onRefresh: () => Promise<unknown>, disabled: bo
       clearTimeout(popTimer.current);
       if (!alive.current) return;
       height.stopAnimation();
+      bounce.stopAnimation();
+      bounce.setValue(0);
       setDistance(0);
       setPhase('settle');
       Animated.timing(height, { toValue: 0, duration: latest.current.motion ? 180 : 0, useNativeDriver: false })
@@ -41,9 +49,11 @@ export function useDudleyRefresh(onRefresh: () => Promise<unknown>, disabled: bo
       dragging.current = false;
       eligible.current = false;
       height.stopAnimation();
+      bounce.stopAnimation();
       setError(false);
       setPhase(latest.current.motion ? 'pop' : 'refresh');
       Animated.timing(height, { toValue: REFRESH_HEIGHT, duration: latest.current.motion ? 180 : 0, useNativeDriver: false }).start();
+      Animated.timing(bounce, { toValue: 0, duration: latest.current.motion ? 180 : 0, useNativeDriver: false }).start();
       popTimer.current = setTimeout(() => {
         if (alive.current && inFlight.current) setPhase('refresh');
       }, 400);
@@ -70,13 +80,27 @@ export function useDudleyRefresh(onRefresh: () => Promise<unknown>, disabled: bo
         if (!eligible.current || inFlight.current) return;
         dragging.current = true;
         height.stopAnimation();
-        pull.current = Math.min(164, Math.max(0, dy * 0.6));
+        pull.current = Math.min(MAX_PULL, Math.max(0, dy * 0.6));
         height.setValue(pull.current);
         setDistance(pull.current);
         setPhase('pull');
       },
+      // Native lists over-scroll themselves; follow the content offset instead of touches.
+      beginDrag: () => {
+        eligible.current = latest.current.gesturesEnabled && !inFlight.current && !latest.current.disabled && latest.current.focused;
+      },
+      track: (y: number) => {
+        if (inFlight.current || !latest.current.gesturesEnabled || latest.current.disabled) return;
+        const next = Math.min(MAX_PULL, Math.max(0, -y));
+        bounce.setValue(next);
+        if (!eligible.current || (!dragging.current && next === 0)) return;
+        dragging.current = true;
+        pull.current = next;
+        setDistance(next);
+        setPhase(next > 0 ? 'pull' : 'idle');
+      },
       release: () => {
-        if (!dragging.current) return;
+        if (!dragging.current) { eligible.current = false; return; }
         if (eligible.current && pull.current >= PULL_THRESHOLD && !latest.current.disabled) void refresh();
         else settle();
       },
@@ -94,9 +118,10 @@ export function useDudleyRefresh(onRefresh: () => Promise<unknown>, disabled: bo
       alive.current = false;
       clearTimeout(popTimer.current);
       height.stopAnimation();
+      bounce.stopAnimation();
       listener.remove();
     };
-  }, [controls, height]);
+  }, [controls, height, bounce]);
   useEffect(() => { if (!focused || disabled || !gesturesEnabled) controls.cancel(); }, [focused, disabled, gesturesEnabled, controls]);
-  return { height, phase, distance, error, controls };
+  return { height, bounce, phase, distance, error, controls };
 }
