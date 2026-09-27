@@ -50,6 +50,37 @@ function readBody(req) {
   });
 }
 
+// supabase-js always wraps storage uploads in multipart/form-data — even
+// when given a plain Blob (web) or a React Native FormData with a `file`
+// field (native) — so the object body here is never raw bytes. Pull the
+// file part out by its Content-Disposition (its field name varies: '' for
+// a Blob upload, 'file' for the native path) rather than assuming either.
+function extractUploadBytes(rawBody, contentType) {
+  const boundaryMatch = /boundary=(?:"([^"]+)"|([^;]+))/i.exec(contentType || '');
+  if (!boundaryMatch) return rawBody;
+
+  const boundary = Buffer.from(`--${boundaryMatch[1] || boundaryMatch[2]}`);
+  const parts = [];
+  let start = rawBody.indexOf(boundary);
+  while (start !== -1) {
+    const next = rawBody.indexOf(boundary, start + boundary.length);
+    if (next === -1) break;
+    parts.push(rawBody.slice(start + boundary.length, next));
+    start = next;
+  }
+
+  for (const part of parts) {
+    const headerEnd = part.indexOf('\r\n\r\n');
+    if (headerEnd === -1) continue;
+    const headers = part.slice(0, headerEnd).toString('utf8');
+    if (!/filename=/i.test(headers)) continue; // skip non-file fields (cacheControl, metadata)
+    let content = part.slice(headerEnd + 4);
+    if (content.slice(-2).equals(Buffer.from('\r\n'))) content = content.slice(0, -2);
+    return content;
+  }
+  return rawBody;
+}
+
 function authUser(req) {
   const auth = req.headers.authorization || '';
   const token = auth.replace(/^Bearer /, '');
@@ -334,7 +365,8 @@ const server = http.createServer(async (req, res) => {
       const user = authUser(req);
       if (!user) return json(res, 401, { message: 'unauthorized' });
       const objectPath = decodeURIComponent(uploadMatch[1]);
-      const bytes = await readBody(req);
+      const rawBody = await readBody(req);
+      const bytes = extractUploadBytes(rawBody, req.headers['content-type']);
 
       // Register the object as the caller so storage RLS runs for real.
       await asUser(user, (client) =>
