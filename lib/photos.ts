@@ -1,8 +1,10 @@
 import { Platform } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
+import { Paths } from 'expo-file-system';
 import { supabase } from '@/lib/supabase';
 import { notify } from '@/lib/notify';
+import { getPhotoProcessingErrorMessage } from '@/lib/photoProcessingError';
 
 const IMMUTABLE_CACHE_SECONDS = '31536000';
 
@@ -49,33 +51,45 @@ export async function capturePhoto(): Promise<string | null> {
 }
 
 export async function createPhotoVariants(photoUri: string): Promise<PhotoVariants> {
-  // Keep the captured pixel dimensions for archival/download use, while
-  // normalizing the file to a maximum-quality JPEG. Generate the smaller
-  // variants sequentially to avoid decoding a multi-megapixel photo several
-  // times concurrently on memory-constrained phones.
-  const full = await ImageManipulator.manipulateAsync(
-    photoUri,
-    [],
-    { compress: 1, format: ImageManipulator.SaveFormat.JPEG }
-  );
-  const detail = await ImageManipulator.manipulateAsync(
-    photoUri,
-    [{ resize: { width: 1200 } }],
-    { compress: 0.82, format: ImageManipulator.SaveFormat.JPEG }
-  );
-  // 480 px covers an 80-point feed image at 3x density and remains sharp in
-  // the wider side-by-side history cards without serving the detail image.
-  const thumbnail = await ImageManipulator.manipulateAsync(
-    photoUri,
-    [{ resize: { width: 480 } }],
-    { compress: 0.65, format: ImageManipulator.SaveFormat.JPEG }
-  );
+  try {
+    // Keep the captured pixel dimensions for archival/download use, while
+    // normalizing the file to a maximum-quality JPEG. Generate the smaller
+    // variants sequentially to avoid decoding a multi-megapixel photo several
+    // times concurrently on memory-constrained phones.
+    const full = await ImageManipulator.manipulateAsync(
+      photoUri,
+      [],
+      { compress: 1, format: ImageManipulator.SaveFormat.JPEG }
+    );
+    const detail = await ImageManipulator.manipulateAsync(
+      photoUri,
+      [{ resize: { width: 1200 } }],
+      { compress: 0.82, format: ImageManipulator.SaveFormat.JPEG }
+    );
+    // 480 px covers an 80-point feed image at 3x density and remains sharp in
+    // the wider side-by-side history cards without serving the detail image.
+    const thumbnail = await ImageManipulator.manipulateAsync(
+      photoUri,
+      [{ resize: { width: 480 } }],
+      { compress: 0.65, format: ImageManipulator.SaveFormat.JPEG }
+    );
 
-  return {
-    fullUri: full.uri,
-    detailUri: detail.uri,
-    thumbnailUri: thumbnail.uri,
-  };
+    return {
+      fullUri: full.uri,
+      detailUri: detail.uri,
+      thumbnailUri: thumbnail.uri,
+    };
+  } catch (error) {
+    let availableDiskSpace: number | undefined;
+    if (Platform.OS !== 'web') {
+      try {
+        availableDiskSpace = Paths.availableDiskSpace;
+      } catch {
+        availableDiskSpace = undefined;
+      }
+    }
+    throw new Error(getPhotoProcessingErrorMessage(error, availableDiskSpace));
+  }
 }
 
 function isDuplicateUpload(error: unknown): boolean {
