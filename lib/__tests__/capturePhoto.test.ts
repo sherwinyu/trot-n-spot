@@ -1,6 +1,7 @@
 import { Platform } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { capturePhoto } from '../photos';
+import * as ImageManipulator from 'expo-image-manipulator';
+import { capturePhoto, createPhotoVariants } from '../photos';
 import { notify } from '@/lib/notify';
 
 jest.mock('expo-image-picker', () => ({
@@ -8,11 +9,18 @@ jest.mock('expo-image-picker', () => ({
   launchCameraAsync: jest.fn(),
   launchImageLibraryAsync: jest.fn(),
 }));
-jest.mock('expo-image-manipulator', () => ({}));
+jest.mock('expo-image-manipulator', () => ({
+  SaveFormat: { JPEG: 'jpeg' },
+  manipulateAsync: jest.fn(),
+}));
+jest.mock('expo-file-system', () => ({
+  Paths: { availableDiskSpace: 300 * 1024 * 1024 },
+}));
 jest.mock('@/lib/supabase', () => ({ supabase: {} }));
 jest.mock('@/lib/notify', () => ({ notify: jest.fn() }));
 
 const mocked = ImagePicker as jest.Mocked<typeof ImagePicker>;
+const mockedImageManipulator = ImageManipulator as jest.Mocked<typeof ImageManipulator>;
 const asset = { canceled: false, assets: [{ uri: 'file:///photo.jpg' }] } as any;
 
 describe('capturePhoto', () => {
@@ -67,5 +75,25 @@ describe('capturePhoto', () => {
 
     expect(mocked.requestCameraPermissionsAsync).not.toHaveBeenCalled();
     expect(mocked.launchCameraAsync).not.toHaveBeenCalled();
+  });
+});
+
+describe('createPhotoVariants', () => {
+  it('turns a disk-full image-processing failure into a clear storage message', async () => {
+    mockedImageManipulator.manipulateAsync.mockRejectedValueOnce(
+      new Error('ENOSPC: No space left on device')
+    );
+
+    await expect(createPhotoVariants('file:///photo.jpg')).rejects.toThrow(
+      'Your phone ran out of storage space. Free up space and try again.'
+    );
+  });
+
+  it('mentions low free storage when the native image error is vague', async () => {
+    mockedImageManipulator.manipulateAsync.mockRejectedValueOnce(new Error('Loading bitmap failed'));
+
+    await expect(createPhotoVariants('file:///photo.jpg')).rejects.toThrow(
+      '300 MB of storage free'
+    );
   });
 });
