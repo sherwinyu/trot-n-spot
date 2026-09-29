@@ -96,3 +96,39 @@ it('toggles reactions optimistically and rolls back a failed tap', async () => {
   expect(result.current.reactions.map((r) => r.kind)).toEqual(['love']);
   expect(result.current.error).toBe('boom');
 });
+
+it('sends a quick second tap on a reaction only after the first lands', async () => {
+  let finish: () => void = () => {};
+  mockInsertReaction.mockReturnValue(new Promise<void>((resolve) => { finish = resolve; }));
+  mockDeleteReaction.mockResolvedValue(undefined);
+  const { result } = renderHook(() => useQuestActivity('q1'));
+  await waitFor(() => expect(result.current.loading).toBe(false));
+
+  let first: Promise<void> = Promise.resolve();
+  let second: Promise<void> = Promise.resolve();
+  act(() => { first = result.current.toggleReaction('love'); });
+  act(() => { second = result.current.toggleReaction('love'); });
+  expect(result.current.reactions).toEqual([]);
+  await act(async () => { await Promise.resolve(); });
+  expect(mockDeleteReaction).not.toHaveBeenCalled();
+
+  await act(async () => { finish(); await first; await second; });
+  expect(mockDeleteReaction).toHaveBeenCalledWith('q1', 'me', 'love');
+  expect(result.current.reactions).toEqual([]);
+});
+
+it('drops a fetch that overlapped a write instead of reverting it', async () => {
+  const { result } = renderHook(() => useQuestActivity('q1'));
+  await waitFor(() => expect(result.current.loading).toBe(false));
+
+  let respond: (v: unknown) => void = () => {};
+  mockFetch.mockReturnValueOnce(new Promise((resolve) => { respond = resolve; }));
+  let stale: Promise<void> = Promise.resolve();
+  act(() => { stale = result.current.refresh(); });
+
+  mockInsertComment.mockResolvedValue({ ...existing, id: 'new-comment', author_id: 'me', body: 'yo' });
+  await act(async () => { await result.current.addComment('yo'); });
+  await act(async () => { respond({ comments: [existing], reactions: [] }); await stale; });
+
+  expect(result.current.comments.map((c) => c.id)).toEqual(['c1', 'new-comment']);
+});

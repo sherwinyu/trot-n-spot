@@ -39,7 +39,8 @@ export function QuestActivity({ quest }: { quest: Quest }) {
   const timeline = useMemo(() => buildTimeline(quest, comments, reactions), [quest, comments, reactions]);
 
   const handlePost = async () => {
-    if (await addComment(draft)) setDraft('');
+    const posted = draft;
+    if (await addComment(posted)) setDraft((current) => (current === posted ? '' : current));
   };
 
   const handleReply = (comment: QuestComment) => {
