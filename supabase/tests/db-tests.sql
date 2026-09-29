@@ -620,5 +620,130 @@ begin
   raise notice 'PASS: mark_notifications_read scopes to the caller';
 end $$;
 
+-- ============ quest comments + reactions ============
+reset role;
+insert into quests (id, pack_id, creator_id, assignee_id, photo_path, description)
+values ('c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1', 'facadefa-cade-4ace-8ade-000000000001', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1/original.jpg', 'comment test');
+
+set role authenticated;
+select test_login('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
+do $$
+declare
+  stored_pack uuid;
+begin
+  -- pack_id is always taken from the quest, whatever the client sends
+  insert into quest_comments (id, quest_id, pack_id, author_id, body)
+  values ('c0000000-0000-4000-8000-000000000001', 'c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1', gen_random_uuid(), 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'Is it near the park?')
+  returning pack_id into stored_pack;
+  assert stored_pack = 'facadefa-cade-4ace-8ade-000000000001', 'comment pack_id copied from quest';
+  begin
+    insert into quest_comments (quest_id, author_id, body)
+    values ('c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'forged');
+    raise exception 'commented as someone else';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    insert into quest_comments (quest_id, author_id, body)
+    values ('c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', '   ');
+    raise exception 'blank comment accepted';
+  exception when check_violation then null;
+  end;
+  insert into quest_reactions (quest_id, user_id, kind)
+  values ('c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'love');
+  begin
+    insert into quest_reactions (quest_id, user_id, kind)
+    values ('c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'love');
+    raise exception 'duplicate reaction accepted';
+  exception when unique_violation then null;
+  end;
+  begin
+    insert into quest_reactions (quest_id, user_id, kind)
+    values ('c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'thumbs');
+    raise exception 'unknown reaction kind accepted';
+  exception when check_violation then null;
+  end;
+  begin
+    insert into quest_reactions (quest_id, user_id, kind)
+    values ('c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'fire');
+    raise exception 'reacted as someone else';
+  exception when insufficient_privilege then null;
+  end;
+  raise notice 'PASS: packmates comment and react only as themselves';
+end $$;
+
+select test_login('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+do $$
+declare affected int;
+begin
+  assert (select count(*) from quest_comments where quest_id = 'c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1') = 1, 'packmate sees the comment';
+  assert (select count(*) from quest_reactions where quest_id = 'c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1') = 1, 'packmate sees the reaction';
+  delete from quest_comments where id = 'c0000000-0000-4000-8000-000000000001';
+  get diagnostics affected = row_count;
+  assert affected = 0, 'cannot delete a packmate''s comment';
+  delete from quest_reactions where user_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+  get diagnostics affected = row_count;
+  assert affected = 0, 'cannot delete a packmate''s reaction';
+  begin
+    update quest_comments set body = 'edited';
+  exception when insufficient_privilege then null;
+  end;
+  assert not exists (select 1 from quest_comments where body = 'edited'), 'comments are immutable';
+  raise notice 'PASS: packmates see but cannot change each other''s comments/reactions';
+end $$;
+
+select test_login('cccccccc-cccc-cccc-cccc-cccccccccccc');
+do $$
+begin
+  assert (select count(*) from quest_comments) = 0, 'outsider sees no comments';
+  assert (select count(*) from quest_reactions) = 0, 'outsider sees no reactions';
+  begin
+    insert into quest_comments (quest_id, author_id, body)
+    values ('c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'sneaky');
+    raise exception 'outsider commented';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    insert into quest_reactions (quest_id, user_id, kind)
+    values ('c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'wow');
+    raise exception 'outsider reacted';
+  exception when insufficient_privilege then null;
+  end;
+  raise notice 'PASS: comments/reactions are pack-scoped';
+end $$;
+
+select test_login('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
+do $$
+declare affected int;
+begin
+  delete from quest_reactions where quest_id = 'c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1' and kind = 'love';
+  get diagnostics affected = row_count;
+  assert affected = 1, 'user removes own reaction';
+  delete from quest_comments where id = 'c0000000-0000-4000-8000-000000000001';
+  get diagnostics affected = row_count;
+  assert affected = 1, 'author deletes own comment';
+  raise notice 'PASS: users remove their own comments/reactions';
+end $$;
+
+-- Comments dispatch push events; a dispatch failure must not block them.
+reset role;
+insert into app_config (key, value) values ('push_webhook_url', 'http://localhost:9999/functions/v1/send-push-notification');
+set role authenticated;
+select test_login('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
+insert into quest_comments (quest_id, author_id, body)
+values ('c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'Found a clue');
+reset role;
+delete from app_config where key = 'push_webhook_url';
+insert into quest_reactions (quest_id, user_id, kind)
+values ('c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'paw');
+insert into notifications (user_id, actor_id, type, quest_id, pack_id, title, body)
+values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'quest_commented', 'c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1', 'facadefa-cade-4ace-8ade-000000000001', 'Nadia commented', 'Found a clue');
+delete from quests where id = 'c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1';
+do $$
+begin
+  assert not exists (select 1 from quest_comments where quest_id = 'c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1'), 'comments cascade with the quest';
+  assert not exists (select 1 from quest_reactions where quest_id = 'c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1'), 'reactions cascade with the quest';
+  raise notice 'PASS: comment push dispatch is best-effort; comments/reactions cascade with the quest';
+end $$;
+
 reset role;
 select 'ALL DB TESTS PASSED' as result;

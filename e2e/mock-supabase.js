@@ -448,6 +448,22 @@ const server = http.createServer(async (req, res) => {
         }
         return respondRows(req, res, rows);
       }
+
+      if (req.method === 'DELETE') {
+        const args = [];
+        const where = buildWhere(params, args);
+        const returning = (req.headers.prefer || '').includes('return=representation')
+          ? 'returning *'
+          : '';
+        const { rows } = await asUser(user, (client) =>
+          client.query(`delete from ${quoteIdent(table)} ${where} ${returning}`, args)
+        );
+        if (!returning) {
+          res.writeHead(204, CORS);
+          return res.end();
+        }
+        return respondRows(req, res, rows);
+      }
     }
 
     json(res, 404, { message: `mock-supabase: unhandled ${req.method} ${p}` });

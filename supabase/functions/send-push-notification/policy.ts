@@ -19,14 +19,23 @@ export type PackMemberRecord = {
   status: 'active' | 'pending';
 };
 
+export type CommentRecord = {
+  id: string;
+  quest_id: string;
+  pack_id: string;
+  author_id: string;
+  body: string;
+};
+
 export type WebhookPayload =
   | { type: 'INSERT' | 'UPDATE' | 'DELETE'; table: 'quests'; record: QuestRecord; old_record?: QuestRecord | null }
   | { type: 'INSERT' | 'UPDATE' | 'DELETE'; table: 'pack_members'; record: PackMemberRecord; old_record?: PackMemberRecord | null }
+  | { type: 'INSERT' | 'UPDATE' | 'DELETE'; table: 'quest_comments'; record: CommentRecord; old_record?: CommentRecord | null }
   // Payloads from the pre-013 trigger carried no `table`; they were always quests.
   | { type: 'INSERT' | 'UPDATE' | 'DELETE'; table?: undefined; record: QuestRecord; old_record?: QuestRecord | null };
 
 export type NotificationData =
-  | { type: 'quest_created' | 'quest_completed'; questId: string; packId: string }
+  | { type: 'quest_created' | 'quest_completed' | 'quest_commented'; questId: string; packId: string }
   | { type: 'pack_joined'; packId: string };
 
 export type PlannedNotification = {
@@ -42,6 +51,10 @@ export type PlanContext = {
   packName: string | null;
   // Active members of the relevant pack, including the actor.
   packMemberIds: string[];
+  // Comment events only: the commented quest and everyone who has
+  // commented on it (may include the actor).
+  quest?: QuestRecord | null;
+  commenterIds?: string[];
 };
 
 // Which pack and actor the policy needs resolved for a payload, or null if
@@ -70,6 +83,11 @@ export function describeEvent(
     if (payload.type === 'INSERT' && member.role === 'member' && member.status === 'active') {
       return { packId: member.pack_id, actorId: member.user_id };
     }
+    return null;
+  }
+  if (table === 'quest_comments' && payload.type === 'INSERT') {
+    const comment = payload.record as CommentRecord;
+    return { packId: comment.pack_id, actorId: comment.author_id };
   }
   return null;
 }
@@ -117,6 +135,24 @@ export function planNotification(
       title: `${actor} found your quest`,
       body: clip(description ?? 'Your quest was found!'),
       data: { type: 'quest_completed', questId: quest.id, packId: quest.pack_id },
+    };
+  }
+
+  if (table === 'quest_comments') {
+    const comment = payload.record as CommentRecord;
+    // Everyone in the conversation: the quest's people plus prior
+    // commenters, as long as they can still read the thread.
+    const quest = ctx.quest;
+    const participants = new Set(
+      [quest?.creator_id, quest?.assignee_id, quest?.finder_id, ...(ctx.commenterIds ?? [])].filter(
+        (id): id is string => !!id
+      )
+    );
+    return {
+      recipientIds: others.filter((id) => participants.has(id)),
+      title: `${actor} commented`,
+      body: clip(comment.body.trim()),
+      data: { type: 'quest_commented', questId: comment.quest_id, packId: comment.pack_id },
     };
   }
 

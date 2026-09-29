@@ -138,6 +138,55 @@ describe('planNotification', () => {
   });
 });
 
+describe('planNotification for comments', () => {
+  const DAVE = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
+  const comment = (author: string, body = 'Is it near the park?'): WebhookPayload => ({
+    type: 'INSERT',
+    table: 'quest_comments',
+    record: { id: 'c1', quest_id: 'q1', pack_id: PACK, author_id: author, body },
+  });
+
+  it('notifies the quest\'s people, not the rest of the pack or the commenter', () => {
+    const plan = planNotification(comment(NADIA), {
+      ...ctx,
+      actorName: 'Nadia',
+      quest: quest(),
+      commenterIds: [NADIA],
+    });
+    expect(plan).toEqual({
+      recipientIds: [SHERWIN],
+      title: 'Nadia commented',
+      body: 'Is it near the park?',
+      data: { type: 'quest_commented', questId: 'q1', packId: PACK },
+    });
+  });
+
+  it('includes earlier commenters who are still in the pack', () => {
+    const plan = planNotification(comment(SHERWIN), {
+      ...ctx,
+      packMemberIds: [SHERWIN, NADIA, CAROL],
+      quest: quest({ mode: 'open', assignee_id: null }),
+      commenterIds: [CAROL, SHERWIN, DAVE],
+    });
+    expect(plan?.recipientIds).toEqual([CAROL]);
+  });
+
+  it('describes comment inserts but not deletes', () => {
+    expect(describeEvent(comment(NADIA))).toEqual({ packId: PACK, actorId: NADIA });
+    expect(describeEvent({ ...comment(NADIA), type: 'DELETE' } as WebhookPayload)).toBeNull();
+  });
+
+  it('still notifies prior commenters when the quest lookup fails', () => {
+    const plan = planNotification(comment(NADIA, `  ${'y'.repeat(100)}  `), {
+      ...ctx,
+      quest: null,
+      commenterIds: [CAROL],
+    });
+    expect(plan?.recipientIds).toEqual([CAROL]);
+    expect(plan?.body.length).toBe(80);
+  });
+});
+
 describe('deadTokens', () => {
   it('returns only tokens Expo reports as DeviceNotRegistered', () => {
     expect(
