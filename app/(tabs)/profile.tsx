@@ -1,17 +1,38 @@
 import { useState } from 'react';
 import { WalkDudley } from '@/components/dudley/WalkDudley';
-import { StyleSheet, TouchableOpacity, Image, ScrollView } from 'react-native';
+import { StyleSheet, TouchableOpacity, Image, ScrollView, Switch, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Text, View } from '@/components/Themed';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
 import { useAuth } from '@/hooks/useAuth';
 import { useJourney } from '@/hooks/useJourney';
-import { confirm } from '@/lib/notify';
+import { confirm, notify } from '@/lib/notify';
 import { formatTimer } from '@/lib/format';
+import { supabase } from '@/lib/supabase';
+import { useNotifications } from '@/providers/NotificationProvider';
 
 export default function ProfileScreen() {
-  const { profile, packs, signOut } = useAuth();
+  const { profile, packs, signOut, refreshProfile } = useAuth();
+  const { permission, requestPermission, openSystemSettings } = useNotifications();
+  const [pushBusy, setPushBusy] = useState(false);
+  const pushEnabled = profile?.push_enabled ?? true;
+  const setPushEnabled = async (enabled: boolean) => {
+    if (!profile || pushBusy) return;
+    setPushBusy(true);
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ push_enabled: enabled })
+        .eq('id', profile.id);
+      if (error) throw error;
+      await refreshProfile();
+    } catch (err: any) {
+      notify('Error', err.message ?? 'Could not update notifications');
+    } finally {
+      setPushBusy(false);
+    }
+  };
   const { activeJourney, startJourney, endJourney, journeyDuration, loading: journeyLoading } = useJourney();
   const [walkBusy, setWalkBusy] = useState(false);
   const changeWalk = async () => {
@@ -63,6 +84,32 @@ export default function ProfileScreen() {
         )}
       </View>
 
+      {Platform.OS !== 'web' && (
+        <View style={[styles.journeySection, { backgroundColor: c.card }]}>
+          <Text style={styles.sectionTitle}>Notifications</Text>
+          {permission === 'granted' ? (
+            <View style={styles.toggleRow}>
+              <Text style={styles.toggleLabel}>Pack activity pings</Text>
+              <Switch value={pushEnabled} disabled={pushBusy} onValueChange={setPushEnabled} />
+            </View>
+          ) : permission === 'denied' ? (
+            <>
+              <Text style={styles.helpText}>Notifications are off in system settings.</Text>
+              <TouchableOpacity style={styles.startButton} accessibilityRole="button" onPress={openSystemSettings}>
+                <Text style={styles.startButtonText}>Open Settings</Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <>
+              <Text style={styles.helpText}>Get a ping when a packmate spots something or finds your quest.</Text>
+              <TouchableOpacity style={styles.startButton} accessibilityRole="button" onPress={() => requestPermission()}>
+                <Text style={styles.startButtonText}>Enable Notifications</Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
+      )}
+
       <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
         <Text style={styles.signOutText}>Sign Out</Text>
       </TouchableOpacity>
@@ -110,6 +157,22 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 16,
     fontWeight: '600',
+    marginBottom: 12,
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    alignSelf: 'stretch',
+    backgroundColor: 'transparent',
+  },
+  toggleLabel: {
+    fontSize: 16,
+  },
+  helpText: {
+    fontSize: 14,
+    color: '#999',
+    textAlign: 'center',
     marginBottom: 12,
   },
   timer: {

@@ -5,6 +5,7 @@ import { Text, View } from '@/components/Themed';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
 import { useAuth } from '@/hooks/useAuth';
+import { useNotifications } from '@/providers/NotificationProvider';
 import { supabase } from '@/lib/supabase';
 import { notify, confirm } from '@/lib/notify';
 import { PackWithMembers } from '@/types/database';
@@ -58,6 +59,7 @@ function PackCard({ pack, onChanged }: { pack: PackWithMembers; onChanged: () =>
 
 export default function PacksScreen() {
   const { packs, refreshProfile } = useAuth();
+  const { maybeAskForPush } = useNotifications();
   const router = useRouter();
   const c = Colors[useColorScheme() ?? 'light'];
   const [name, setName] = useState('');
@@ -80,7 +82,11 @@ export default function PacksScreen() {
         notify('Error', data.error);
         return;
       }
-      notify('Pack created!', `Share invite code ${data.invite_code} to bring others in.`);
+      notify(
+        'Pack created!',
+        `Share invite code ${data.invite_code} to bring others in.`,
+        hasPacks ? undefined : maybeAskForPush
+      );
       setName('');
       await refreshProfile();
     } catch (err: any) {
@@ -105,7 +111,7 @@ export default function PacksScreen() {
         notify('Error', data.error);
         return;
       }
-      notify('Joined!', `Welcome to ${data.pack_name}`);
+      notify('Joined!', `Welcome to ${data.pack_name}`, hasPacks ? undefined : maybeAskForPush);
       setCode('');
       await refreshProfile();
     } catch (err: any) {

@@ -8,6 +8,7 @@ import { Profile, PackWithMembers } from '@/types/database';
 import { clearSignedPhotoUrlCache, hydrateSignedPhotoUrlCache } from '@/lib/signedUrls';
 import { cacheClearAll, cacheGet, cacheSet } from '@/lib/offline';
 import { resetPrefetchMemory } from '@/lib/prefetch';
+import { removePushToken } from '@/lib/notifications';
 
 type CachedAccount = {
   profile: Profile;
@@ -123,6 +124,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signOut = useCallback(async () => {
+    // Needs the outgoing session's RLS, so it runs before the sign-out.
+    await removePushToken().catch(() => {});
     await authSignOut();
     clearSignedPhotoUrlCache();
     resetPrefetchMemory();

@@ -7,9 +7,25 @@ export type Profile = {
   id: string;
   display_name: string;
   avatar_url: string | null;
-  push_token: string | null;
+  // Global mute for push; tokens stay registered so re-enabling is instant.
+  push_enabled: boolean;
   created_at: string;
   updated_at: string;
+};
+
+// One activity-feed entry per recipient, written server-side alongside
+// the push (same copy). Muted users still get rows.
+export type ActivityNotification = {
+  id: string;
+  user_id: string;
+  actor_id: string | null;
+  type: 'quest_created' | 'quest_completed' | 'pack_joined';
+  quest_id: string | null;
+  pack_id: string | null;
+  title: string;
+  body: string;
+  read_at: string | null;
+  created_at: string;
 };
 
 export type Pack = {
