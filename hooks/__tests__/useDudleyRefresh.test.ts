@@ -55,6 +55,31 @@ it('never claims scrolls started below the top, upward/horizontal drags or multi
   c.begin(); expect(c.canMove(0, 180)).toBe(true);
 });
 
+it('drag claims only a clear downward pull, then follows it even as it drifts sideways', () => {
+  const { result } = renderHook(() => useDudleyRefresh(jest.fn(), false, true, true));
+  act(() => { result.current.controls.begin(); result.current.controls.drag(0, 4); });
+  expect(result.current.phase).toBe('idle');
+  act(() => { result.current.controls.drag(0, 60); result.current.controls.drag(40, 50); });
+  expect(result.current.phase).toBe('pull');
+  expect(result.current.distance).toBe(30);
+});
+
+it('drag claims a diagonal pull that is still mostly downward', () => {
+  const { result } = renderHook(() => useDudleyRefresh(jest.fn(), false, true, true));
+  act(() => { result.current.controls.begin(); result.current.controls.drag(11, 60); });
+  expect(result.current.phase).toBe('pull');
+});
+
+it('a second finger ends an active drag, so releasing it does not refresh', () => {
+  const refresh = jest.fn().mockResolvedValue(undefined);
+  const { result } = renderHook(() => useDudleyRefresh(refresh, false, true, true));
+  act(() => { result.current.controls.begin(); result.current.controls.drag(0, 200); });
+  expect(result.current.phase).toBe('pull');
+  act(() => { result.current.controls.drag(0, 220, 2); result.current.controls.drag(0, 230, 1); result.current.controls.release(); });
+  expect(result.current.phase).not.toBe('pull');
+  expect(refresh).not.toHaveBeenCalled();
+});
+
 it('clears a canceled gesture and a gesture interrupted by blur', () => {
   const request = jest.fn();
   const { result, rerender } = renderHook<ReturnType<typeof useDudleyRefresh>, { focused: boolean }>(({ focused }) => useDudleyRefresh(request, false, true, focused), { initialProps: { focused: true } });

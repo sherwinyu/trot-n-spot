@@ -33,16 +33,18 @@ shake.” Start from current main, preserving the recently merged Dudley behavio
 the list itself owns the gesture on native, so a standard pull from anywhere on
 the list works: iOS follows the list's own bounce (`contentOffset.y < 0`) and
 refreshes on release past the threshold; Android has no over-scroll, so a
-pull that starts with the list at its top is claimed by a capture
-`PanResponder` once the touch is clearly vertical (>8px, so taps and short
-drifts still reach cards and buttons) and Dudley follows the touch distance
-from then on, with an invisible `RefreshControl` as a fallback if the native
-scroll wins the gesture. Web uses non-passive touch handling
+pull that starts with the list at its top — anywhere on the list, not just the
+header — is recognized by a `react-native-gesture-handler` pan that runs
+simultaneously with the list's native scroll (a JS `PanResponder` loses that
+race at touch slop). It is claimed once the touch is clearly vertical (>8px,
+so taps and short drifts still reach cards and buttons) and Dudley follows the
+touch distance from then on. Web uses non-passive touch handling
 only for eligible pulls and also supports mouse dragging. Ordinary scrolling and
 list virtualization remain in place. All Dudley animations run on the JS driver,
 since the pop transform shares nodes with the layout-driven reveal height.
 The async state and gesture eligibility live in `hooks/useDudleyRefresh.ts`.
-No new package or native configuration is required.
+Android needs `react-native-gesture-handler` (root `GestureHandlerRootView` in
+`app/_layout.tsx`), so a new native build.
 
 `components/dudley/assets/peek-sniff.webp` is a transparent 1024 × 512 atlas,
 eight 256 × 256 cells (four columns/two rows): curious, alert, wide-eyed, pop,
@@ -88,7 +90,7 @@ ears settle. Paws stay planted. No overlap or motion lines. Real transparency.�
   cancellation/blur, reduced motion, failed requests, fast responses, unmount,
   disabled state and callback freshness.
 
-Native list bounce/RefreshControl behavior and VoiceOver/TalkBack need device
+Native list bounce behavior and VoiceOver/TalkBack need device
 verification. This environment has no Android emulator or iOS simulator. Browser
 fixtures do not validate live backend, camera, GPS or actual offline sync.
 

@@ -1,6 +1,8 @@
 import React from 'react';
 import { act, fireEvent, render } from '@testing-library/react-native';
-import { Animated, GestureResponderEvent, PanResponder, PanResponderCallbacks, PanResponderGestureState, Platform, RefreshControl, ScrollViewProps, View } from 'react-native';
+import { Animated, Platform, ScrollViewProps, View } from 'react-native';
+import { PanGesture, State } from 'react-native-gesture-handler';
+import { fireGestureHandler, getByGestureTestId } from 'react-native-gesture-handler/jest-utils';
 import { DudleyRefresh } from '@/components/dudley/DudleyRefresh';
 
 jest.mock('@react-navigation/native', () => ({ useIsFocused: () => true }));
@@ -45,41 +47,86 @@ it('keeps every animation JS-driven: the pop shares nodes with the layout-driven
   expect(configs.filter(c => c.useNativeDriver)).toEqual([]);
 });
 
-it('Android: a standard native pull anywhere on the list triggers the refresh, unless gestures are off', async () => {
-  jest.replaceProperty(Platform, 'OS', 'android');
-  const refresh = jest.fn().mockResolvedValue(undefined);
-  const { rerender } = render(<DudleyRefresh onRefresh={refresh}>{children}</DudleyRefresh>);
-  const control = scroll.refreshControl as React.ReactElement<React.ComponentProps<typeof RefreshControl>>;
-  expect(control.type).toBe(RefreshControl);
-  expect(scroll.bounces).toBe(false);
-  await act(async () => control.props.onRefresh?.());
-  expect(refresh).toHaveBeenCalledTimes(1);
-  rerender(<DudleyRefresh onRefresh={refresh} gesturesEnabled={false}>{children}</DudleyRefresh>);
-  expect(scroll.refreshControl).toBeUndefined();
+// fireGestureHandler plays a complete gesture; step through the callbacks directly to observe a pull in progress.
+const pull = () => {
+  const { handlers } = getByGestureTestId('dudley-pull') as PanGesture;
+  const at = (translationY: number, translationX = 0) => ({ translationX, translationY, numberOfPointers: 1 }) as never;
+  return {
+    begin: () => act(() => { handlers.onBegin?.(at(0)); }),
+    move: (dy: number, dx = 0) => act(() => { handlers.onUpdate?.(at(dy, dx)); }),
+    end: async (success: boolean) => {
+      await act(async () => { handlers.onEnd?.(at(0), success); handlers.onFinalize?.(at(0), success); });
+    },
+  };
+};
+// Plays a complete gesture; the first ACTIVE event is the activation (onStart), later ones are updates.
+const pan = (...moves: Array<[dx: number, dy: number]>) => act(() => {
+  const at = ([translationX, translationY]: [number, number]) => ({ translationX, translationY, numberOfPointers: 1 });
+  fireGestureHandler<PanGesture>(getByGestureTestId('dudley-pull'), [
+    { state: State.BEGAN, ...at([0, 0]) },
+    ...moves.map(m => ({ state: State.ACTIVE, ...at(m) })),
+    { state: State.END, ...at(moves[moves.length - 1]) },
+  ]);
 });
 
-it('Android: a pull from the top of the list shows Dudley progressively before the threshold, then refreshes on release', async () => {
+it('Android: a pull that starts anywhere on the list at its top shows Dudley progressively, then refreshes on release', async () => {
   jest.replaceProperty(Platform, 'OS', 'android');
   const refresh = jest.fn().mockResolvedValue(undefined);
-  let config: PanResponderCallbacks = {};
-  jest.spyOn(PanResponder, 'create').mockImplementation(callbacks => { config = callbacks; return { panHandlers: {} }; });
   const { queryByText } = render(<DudleyRefresh onRefresh={refresh}>{children}</DudleyRefresh>);
-  const g = (dy: number, touches = 1) => ({ dx: 0, dy, numberActiveTouches: touches } as PanResponderGestureState);
-  const e = {} as GestureResponderEvent;
-  config.onStartShouldSetPanResponderCapture!(e, g(0));
-  // A short drift stays a tap for the list's children; a clear vertical pull is claimed.
-  expect(config.onMoveShouldSetPanResponderCapture!(e, g(4))).toBe(false);
-  expect(config.onMoveShouldSetPanResponderCapture!(e, g(12))).toBe(true);
-  act(() => { config.onPanResponderGrant!(e, g(12)); config.onPanResponderMove!(e, g(60)); });
+  expect(scroll.bounces).toBe(false);
+  expect(scroll.refreshControl).toBeUndefined();
+  const g = pull();
+  g.begin();
+  // The pan runs alongside the list's native scroll; a short drift is not a pull, so the list's children keep the tap.
+  g.move(4);
+  expect(scroll.scrollEnabled).toBe(true);
+  g.move(60);
   expect(queryByText('A little further…')).not.toBeNull();
   expect(scroll.scrollEnabled).toBe(false);
-  act(() => { config.onPanResponderMove!(e, g(180)); });
+  g.move(180);
   expect(queryByText('Let go — Dudley’s ready!')).not.toBeNull();
-  await act(async () => { config.onPanResponderRelease!(e, g(180)); });
+  await g.end(true);
   expect(refresh).toHaveBeenCalledTimes(1);
   expect(scroll.scrollEnabled).toBe(true);
-  // A drag that begins mid-list is left to the native scroll.
+});
+
+it('Android: a cancelled pull settles without refreshing', async () => {
+  jest.replaceProperty(Platform, 'OS', 'android');
+  const refresh = jest.fn().mockResolvedValue(undefined);
+  const { queryByText } = render(<DudleyRefresh onRefresh={refresh}>{children}</DudleyRefresh>);
+  const g = pull();
+  g.begin();
+  g.move(180);
+  expect(queryByText('Let go — Dudley’s ready!')).not.toBeNull();
+  await g.end(false);
+  expect(queryByText('Let go — Dudley’s ready!')).toBeNull();
+  expect(refresh).not.toHaveBeenCalled();
+  expect(scroll.scrollEnabled).toBe(true);
+});
+
+it('Android: leaves a drag begun mid-list or a horizontal swipe to the list', () => {
+  jest.replaceProperty(Platform, 'OS', 'android');
+  const refresh = jest.fn().mockResolvedValue(undefined);
+  render(<DudleyRefresh onRefresh={refresh}>{children}</DudleyRefresh>);
   act(() => { scroll.onScroll?.(scrolled(300)); });
-  config.onStartShouldSetPanResponderCapture!(e, g(0));
-  expect(config.onMoveShouldSetPanResponderCapture!(e, g(40))).toBe(false);
+  pan([0, 10], [0, 60], [0, 180]);
+  act(() => { scroll.onScroll?.(scrolled(0)); });
+  pan([0, 10], [60, 20], [0, 180]);
+  expect(refresh).not.toHaveBeenCalled();
+  expect(scroll.scrollEnabled).toBe(true);
+});
+
+it('Android: turning gestures off disables the pull without remounting the list', () => {
+  jest.replaceProperty(Platform, 'OS', 'android');
+  const refresh = jest.fn().mockResolvedValue(undefined);
+  const mounted = jest.fn();
+  const List = (props: ScrollViewProps) => { scroll = props; React.useEffect(mounted, []); return <View />; };
+  const list = (props: ScrollViewProps) => <List {...props} />;
+  const { rerender, queryByText } = render(<DudleyRefresh onRefresh={refresh}>{list}</DudleyRefresh>);
+  rerender(<DudleyRefresh onRefresh={refresh} gesturesEnabled={false}>{list}</DudleyRefresh>);
+  expect(scroll.scrollEnabled).toBeUndefined();
+  pan([0, 10], [0, 60], [0, 180]);
+  expect(queryByText('Let go — Dudley’s ready!')).toBeNull();
+  expect(refresh).not.toHaveBeenCalled();
+  expect(mounted).toHaveBeenCalledTimes(1);
 });
