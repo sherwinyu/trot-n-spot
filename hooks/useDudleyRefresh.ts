@@ -88,7 +88,9 @@ export function useDudleyRefresh(onRefresh: () => Promise<unknown>, disabled: bo
       canMove,
       move,
       // Follows a pull once it has been claimed; until then, only a clear downward pull is claimed.
+      // A second finger ends the pull.
       drag: (dx: number, dy: number, touches = 1) => {
+        if (touches !== 1 && dragging.current) { if (!inFlight.current) settle(); return; }
         if (dragging.current || canMove(dx, dy, touches)) move(dy);
       },
       // Native lists over-scroll themselves; follow the content offset instead of touches.

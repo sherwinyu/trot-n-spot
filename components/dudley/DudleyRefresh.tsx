@@ -120,7 +120,6 @@ export function DudleyRefresh({ onRefresh, disabled = false, hidden = false, ges
       .maxPointers(1)
       .activeOffsetY(8)
       .failOffsetY(-8)
-      .failOffsetX([-10, 10])
       .simultaneousWithExternalGesture(list)
       .onBegin(() => {
         if (TextInput.State.currentlyFocusedInput()) controls.cancel();
