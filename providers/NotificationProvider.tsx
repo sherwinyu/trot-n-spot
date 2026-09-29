@@ -15,6 +15,8 @@ import {
   syncPushToken,
 } from '@/lib/notifications';
 import { confirm } from '@/lib/notify';
+import { fetchActivity, markAllActivityRead, unseenCount } from '@/lib/activity';
+import { ActivityNotification } from '@/types/database';
 
 if (Platform.OS !== 'web') {
   Notifications.setNotificationHandler({
@@ -45,6 +47,11 @@ type NotificationContextType = {
   // times.
   maybeAskForPush: () => Promise<void>;
   openSystemSettings: () => void;
+  // Persisted activity feed (newest first) for the signed-in user.
+  activity: ActivityNotification[];
+  unreadActivity: number;
+  refreshActivity: () => Promise<void>;
+  markActivityRead: () => Promise<void>;
 };
 
 const NotificationContext = createContext<NotificationContextType>({
@@ -53,6 +60,10 @@ const NotificationContext = createContext<NotificationContextType>({
   requestPermission: async () => 'unavailable',
   maybeAskForPush: async () => {},
   openSystemSettings: () => {},
+  activity: [],
+  unreadActivity: 0,
+  refreshActivity: async () => {},
+  markActivityRead: async () => {},
 });
 
 export function NotificationProvider({ children }: { children: React.ReactNode }) {
@@ -60,8 +71,48 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   const router = useRouter();
   const [permission, setPermission] = useState<PushPermission>('unavailable');
   const [receivedCount, setReceivedCount] = useState(0);
+  const [activity, setActivity] = useState<ActivityNotification[]>([]);
+  // Unread rows already marked read server-side but still shown bold
+  // until the next fetch, so opening the tab doesn't un-highlight them.
+  const [seenIds, setSeenIds] = useState<Set<string>>(new Set());
+  const activityRef = useRef(activity);
   const handledColdStart = useRef(false);
   const userId = user?.id ?? null;
+
+  const refreshActivity = useCallback(async () => {
+    if (!userId) return;
+    try {
+      const items = await fetchActivity();
+      activityRef.current = items;
+      setActivity(items);
+    } catch (e) {
+      console.warn('activity fetch failed', e);
+    }
+  }, [userId]);
+
+  // Load on sign-in, whenever a push arrives, and on foreground (pushes
+  // delivered while backgrounded don't fire the received listener).
+  useEffect(() => {
+    if (!userId) {
+      activityRef.current = [];
+      setActivity([]);
+      setSeenIds(new Set());
+      return;
+    }
+    refreshActivity();
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') refreshActivity();
+    });
+    return () => sub.remove();
+  }, [userId, receivedCount, refreshActivity]);
+
+  const markActivityRead = useCallback(async () => {
+    if (!userId) return;
+    const unread = activityRef.current.filter((n) => n.read_at === null).map((n) => n.id);
+    if (unread.length === 0) return;
+    setSeenIds((prev) => new Set([...prev, ...unread]));
+    await markAllActivityRead().catch((e) => console.warn('mark read failed', e));
+  }, [userId]);
 
   // Re-read on foreground too: the user may have flipped the switch in
   // system Settings and come straight back.
@@ -140,7 +191,17 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
   return (
     <NotificationContext.Provider
-      value={{ permission, receivedCount, requestPermission, maybeAskForPush, openSystemSettings }}
+      value={{
+        permission,
+        receivedCount,
+        requestPermission,
+        maybeAskForPush,
+        openSystemSettings,
+        activity,
+        unreadActivity: unseenCount(activity, seenIds),
+        refreshActivity,
+        markActivityRead,
+      }}
     >
       {children}
     </NotificationContext.Provider>

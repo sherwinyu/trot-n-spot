@@ -13,6 +13,21 @@ export type Profile = {
   updated_at: string;
 };
 
+// One activity-feed entry per recipient, written server-side alongside
+// the push (same copy). Muted users still get rows.
+export type ActivityNotification = {
+  id: string;
+  user_id: string;
+  actor_id: string | null;
+  type: 'quest_created' | 'quest_completed' | 'pack_joined';
+  quest_id: string | null;
+  pack_id: string | null;
+  title: string;
+  body: string;
+  read_at: string | null;
+  created_at: string;
+};
+
 export type Pack = {
   id: string;
   name: string;

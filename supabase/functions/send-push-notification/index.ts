@@ -1,4 +1,5 @@
-// Sends Expo push notifications for quest and pack activity.
+// Records activity-feed rows and sends Expo push notifications for quest
+// and pack activity.
 //
 // Invoked by the database trigger notify_push_event() (via pg_net) with a
 // Supabase webhook-style payload:
@@ -10,7 +11,8 @@
 //   quests UPDATE -> completed   -> creator
 //   pack_members INSERT (member) -> every other active pack member
 //
-// Recipients with profiles.push_enabled = false are skipped. Every device
+// Every recipient gets a `notifications` row (the in-app Activity feed).
+// Recipients with profiles.push_enabled = false skip the push. Every device
 // token of each recipient gets the message; tokens Expo reports as
 // DeviceNotRegistered are deleted.
 //
@@ -70,6 +72,19 @@ Deno.serve(async (req) => {
     return Response.json({ skipped: true, reason: 'no recipients' });
   }
 
+  const { error: feedError } = await supabase.from('notifications').insert(
+    plan.recipientIds.map((userId) => ({
+      user_id: userId,
+      actor_id: event.actorId,
+      type: plan.data.type,
+      quest_id: 'questId' in plan.data ? plan.data.questId : null,
+      pack_id: plan.data.packId,
+      title: plan.title,
+      body: plan.body,
+    }))
+  );
+  if (feedError) console.error('activity feed insert failed', feedError);
+
   const { data: enabled } = await supabase
     .from('profiles')
     .select('id')
@@ -77,7 +92,7 @@ Deno.serve(async (req) => {
     .eq('push_enabled', true);
   const enabledIds = (enabled ?? []).map((p: { id: string }) => p.id);
   if (enabledIds.length === 0) {
-    return Response.json({ skipped: true, reason: 'recipients muted' });
+    return Response.json({ skipped: true, reason: 'recipients muted', recorded: plan.recipientIds.length });
   }
 
   const { data: tokenRows } = await supabase
@@ -86,7 +101,7 @@ Deno.serve(async (req) => {
     .in('user_id', enabledIds);
   const tokens = (tokenRows ?? []).map((t: { token: string }) => t.token);
   if (tokens.length === 0) {
-    return Response.json({ skipped: true, reason: 'no push tokens' });
+    return Response.json({ skipped: true, reason: 'no push tokens', recorded: plan.recipientIds.length });
   }
 
   const pushResponse = await fetch(EXPO_PUSH_URL, {
@@ -119,5 +134,6 @@ Deno.serve(async (req) => {
     sent: tickets.filter((t) => t.status === 'ok').length,
     prunedTokens: dead.length,
     recipients: enabledIds.length,
+    recorded: plan.recipientIds.length,
   });
 });

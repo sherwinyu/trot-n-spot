@@ -576,4 +576,49 @@ begin
 end $$;
 
 reset role;
+
+-- ============ notifications (activity feed) ============
+-- Rows are written by the edge function with the service role.
+insert into notifications (user_id, actor_id, type, pack_id, title, body)
+select 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'pack_joined', id, 'Nadia joined', 'Say hi'
+from packs where name = 'Sherwin & Nadia';
+insert into notifications (user_id, actor_id, type, pack_id, title, body)
+select 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'pack_joined', id, 'Sherwin joined', 'Say hi'
+from packs where name = 'Sherwin & Nadia';
+
+set role authenticated;
+select test_login('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+do $$
+begin
+  assert (select count(*) from notifications) = 1, 'sherwin sees only his own activity';
+  assert (select read_at from notifications) is null, 'new activity is unread';
+  begin
+    insert into notifications (user_id, type, title, body)
+    values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'pack_joined', 'forged', 'forged');
+    raise exception 'client inserted an activity row';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    update notifications set title = 'edited';
+  exception when insufficient_privilege then null;
+  end;
+  assert not exists (select 1 from notifications where title = 'edited'), 'client edited an activity row';
+  raise notice 'PASS: notifications are read-only and private to the recipient';
+end $$;
+
+select mark_notifications_read();
+do $$
+begin
+  assert (select bool_and(read_at is not null) from notifications), 'sherwin''s activity marked read';
+  raise notice 'PASS: mark_notifications_read';
+end $$;
+
+select test_login('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
+do $$
+begin
+  assert (select count(*) from notifications where read_at is null) = 1, 'nadia''s activity untouched';
+  raise notice 'PASS: mark_notifications_read scopes to the caller';
+end $$;
+
+reset role;
 select 'ALL DB TESTS PASSED' as result;

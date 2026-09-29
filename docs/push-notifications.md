@@ -8,6 +8,7 @@ client writes row ──► Postgres AFTER trigger notify_push_event()
                           ▼
               edge function send-push-notification
                           │  policy.ts decides recipients + copy
+                          │  inserts one `notifications` row per recipient (Activity feed)
                           │  loads push_tokens (service role), skips push_enabled=false
                           ▼
               Expo push API ──► APNs (iOS) / FCM (Android) ──► device
@@ -47,6 +48,12 @@ to ~80 chars.
   registered so re-enabling is instant.
 - **Foreground**: a push refetches the feed. The banner is suppressed
   only while the feed tab is focused.
+- **Activity feed**: every event that would push is also persisted to
+  `notifications` (same title/body, even for muted users). The History tab
+  lists them above completed quests; the tab badge shows the unread count
+  and opening the tab calls `mark_notifications_read()`. Rows are
+  read-only for clients (select-only RLS; the edge function writes with
+  the service role). Events before this shipped have no rows.
 
 ## Hosted setup (done for `xbegbjicfgsozazlbysc`)
 

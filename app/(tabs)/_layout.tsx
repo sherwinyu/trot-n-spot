@@ -2,9 +2,11 @@ import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
+import { useNotifications } from '@/providers/NotificationProvider';
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
+  const { unreadActivity } = useNotifications();
 
   return (
     <Tabs
@@ -35,6 +37,7 @@ export default function TabLayout() {
         name="history"
         options={{
           title: 'History',
+          tabBarBadge: unreadActivity > 0 ? unreadActivity : undefined,
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="time" size={size} color={color} />
           ),
