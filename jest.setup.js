@@ -1,3 +1,4 @@
+import 'react-native-gesture-handler/jestSetup';
 // In-memory AsyncStorage mock (the package stopped shipping one in v3).
 jest.mock('@react-native-async-storage/async-storage', () => {
   let store = {};

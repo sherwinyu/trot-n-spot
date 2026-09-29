@@ -1,6 +1,7 @@
 import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, PanResponder, Platform, Pressable, RefreshControl, ScrollViewProps, StyleSheet, Text, TextInput, View, ViewStyle } from 'react-native';
+import { Animated, Platform, Pressable, ScrollViewProps, StyleSheet, Text, TextInput, View, ViewStyle } from 'react-native';
 import { Image } from 'expo-image';
+import { Gesture, GestureDetector, GestureType } from 'react-native-gesture-handler';
 import { useIsFocused } from '@react-navigation/native';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
@@ -20,11 +21,10 @@ type Props = {
 /**
  * A shared replacement for RefreshControl on feed, history and groceries.
  * Native lists keep their own scroll gesture: iOS shows Dudley in the over-scroll
- * bounce. Android has no bounce, so a pull that starts at the top of the list is
- * claimed by a capture PanResponder once it is clearly vertical (taps and short
- * drifts stay with the list's children) and tracked by touch distance; an
- * invisible RefreshControl remains as the fallback when the native scroll wins.
- * Web pulls are tracked from DOM touch/mouse events.
+ * bounce. Android has no bounce, so a pull that starts with the list at its top is
+ * recognized by a gesture-handler pan on the UI thread, running alongside the
+ * list's native scroll (a JS responder loses that race at touch slop), and
+ * tracked by touch distance. Web pulls are tracked from DOM touch/mouse events.
  */
 export function DudleyRefresh({ onRefresh, disabled = false, hidden = false, gesturesEnabled = true, children }: Props) {
   const focused = useIsFocused();
@@ -110,22 +110,31 @@ export function DudleyRefresh({ onRefresh, disabled = false, hidden = false, ges
   }, [controls]);
 
   const android = Platform.OS === 'android' && gesturesEnabled && !hidden;
-  const pan = useMemo(() => !android ? undefined : PanResponder.create({
-    onStartShouldSetPanResponderCapture: (_, g) => {
-      if (g.numberActiveTouches !== 1 || TextInput.State.currentlyFocusedInput()) controls.cancel();
-      else controls.begin();
-      return false;
-    },
-    onMoveShouldSetPanResponderCapture: (_, g) => {
-      if (TextInput.State.currentlyFocusedInput()) { controls.cancel(); return false; }
-      return controls.canMove(g.dx, g.dy, g.numberActiveTouches);
-    },
-    onPanResponderGrant: (_, g) => controls.move(g.dy),
-    onPanResponderMove: (_, g) => { if (g.numberActiveTouches !== 1) controls.cancel(); else controls.move(g.dy); },
-    onPanResponderRelease: controls.release,
-    onPanResponderTerminate: controls.cancel,
-    onPanResponderTerminationRequest: () => false,
-  }), [android, controls]);
+  const gestures = useMemo(() => {
+    const list = Gesture.Native();
+    // Callbacks may be workletized, so gesture state lives in `controls` rather than closure locals.
+    const pull = Gesture.Pan()
+      .runOnJS(true)
+      .enabled(android)
+      .withTestId('dudley-pull')
+      .maxPointers(1)
+      .activeOffsetY(8)
+      .failOffsetY(-8)
+      .failOffsetX([-10, 10])
+      .simultaneousWithExternalGesture(list)
+      .onBegin(() => {
+        if (TextInput.State.currentlyFocusedInput()) controls.cancel();
+        else controls.begin();
+      })
+      .onUpdate(e => controls.drag(e.translationX, e.translationY, e.numberOfPointers))
+      .onEnd((_, success) => {
+        if (success) controls.release();
+        else controls.cancel();
+      });
+    return { list, pull };
+  }, [android, controls]);
+  const onAndroid = (gesture: GestureType, node: ReactNode) =>
+    Platform.OS === 'android' ? <GestureDetector gesture={gesture}>{node}</GestureDetector> : node;
 
   const frame = !motion ? 0 : phase === 'pop' ? 3 : phase === 'refresh'
     ? [4, 5, 6, 7, 4, 5, 6, 7][shake]
@@ -142,7 +151,7 @@ export function DudleyRefresh({ onRefresh, disabled = false, hidden = false, ges
           <Text style={{ color: c.tint, opacity: disabled || busy ? 0.5 : 1, fontSize: 13, fontWeight: '600' }}>Refresh</Text>
         </Pressable>
       </View>}
-      <View style={styles.body} {...pan?.panHandlers}>
+      {onAndroid(gestures.pull, <View style={styles.body}>
         <Animated.View testID="dudley-refresh-reveal" style={[styles.reveal, { height, backgroundColor: c.background }]} />
         {/* Dudley climbs and grows while the list slides down (the reveal spacer, or the list's own
             over-scroll bounce), so he rises out from behind its edge; once fully out his paws ride on
@@ -160,7 +169,7 @@ export function DudleyRefresh({ onRefresh, disabled = false, hidden = false, ges
             </Animated.View>
           </Animated.View>
         </Animated.View>
-        {children({
+        {onAndroid(gestures.list, children({
           onScroll: event => {
             controls.scroll(event.nativeEvent.contentOffset.y);
             if (Platform.OS === 'ios') controls.track(event.nativeEvent.contentOffset.y);
@@ -169,16 +178,11 @@ export function DudleyRefresh({ onRefresh, disabled = false, hidden = false, ges
           bounces: Platform.OS === 'ios',
           overScrollMode: 'never',
           ...(Platform.OS === 'ios' ? { onScrollBeginDrag: controls.beginDrag, onScrollEndDrag: controls.release } : {}),
-          ...(android ? {
-            scrollEnabled: phase !== 'pull',
-            // Off-screen and transparent: only the native pull detection is wanted.
-            refreshControl: <RefreshControl refreshing={busy} enabled={!disabled} onRefresh={() => void controls.refresh()}
-              colors={['transparent']} progressBackgroundColor="transparent" progressViewOffset={-200} />,
-          } : {}),
+          ...(android ? { scrollEnabled: phase !== 'pull' } : {}),
           // Prevent the browser's page reload gesture, while retaining list scrolling.
           ...(Platform.OS === 'web' ? { scrollEnabled: phase !== 'pull', style: { flex: 1, overscrollBehaviorY: 'contain' } as ScrollViewProps['style'] } : {}),
-        })}
-      </View>
+        }))}
+      </View>)}
     </View>
   );
 }
