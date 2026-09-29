@@ -180,7 +180,8 @@ async function main() {
     await pageA.getByText('Created').waitFor({ timeout: 20000 });
     const creatorSeesLocation = await pageA
       .getByText('Spotted at 38.9')
-      .isVisible()
+      .waitFor({ timeout: 10000 })
+      .then(() => true)
       .catch(() => false);
     check('creator sees 📍 location line', creatorSeesLocation);
     await pageA.screenshot({ path: path.join(SHOTS, '04-sherwin-detail-location.png') });
@@ -204,14 +205,52 @@ async function main() {
     check('assignee does NOT see location', !assigneeSeesLocation);
     await pageB.screenshot({ path: path.join(SHOTS, '06-nadia-detail-no-location.png') });
 
+    console.log('== Nadia reacts and comments on the quest');
+    await pageB.getByLabel('React ❤️').click();
+    await pageB.getByText('You reacted ❤️').waitFor({ timeout: 10000 });
+    check('reaction appears in the quest timeline', true);
+    await pageB.getByLabel('React 🔥').click();
+    await pageB.getByText('You reacted 🔥').waitFor({ timeout: 10000 });
+    await pageB.getByLabel('React 🔥').click();
+    let fireGone = false;
+    for (let i = 0; i < 10 && !fireGone; i++) {
+      await pageB.waitForTimeout(500);
+      fireGone = !(await pageB.getByText('You reacted 🔥').isVisible().catch(() => false));
+    }
+    check('tapping a reaction again removes it', fireGone);
+    await pageB.getByPlaceholder('Add a comment…').fill('Is it near the park?');
+    await pageB.getByLabel('Post comment').click();
+    await pageB.getByText('Is it near the park?').waitFor({ timeout: 10000 });
+    check('comment posts to the quest timeline', true);
+    await pageB.getByPlaceholder('Add a comment…').fill('oops, typo');
+    await pageB.getByLabel('Post comment').click();
+    await pageB.getByText('oops, typo').waitFor({ timeout: 10000 });
+    await pageB
+      .getByTestId('quest-comment')
+      .filter({ hasText: 'oops, typo' })
+      .getByLabel('Delete comment')
+      .click();
+    let typoGone = false;
+    for (let i = 0; i < 10 && !typoGone; i++) {
+      await pageB.waitForTimeout(500);
+      typoGone = !(await pageB.getByText('oops, typo').isVisible().catch(() => false));
+    }
+    check('author can delete their own comment', typoGone);
+    await pageB.screenshot({ path: path.join(SHOTS, '06b-nadia-activity.png') });
+
     console.log('== Nadia completes the quest');
     await attachPhoto(pageB, 'I Found It!');
     await pageB.getByText('Complete Quest').waitFor({ timeout: 20000 });
     check('side-by-side compare shown before confirming', true);
     await pageB.screenshot({ path: path.join(SHOTS, '07-nadia-compare.png') });
     await pageB.getByText('Complete Quest').click();
-    await pageB.waitForTimeout(2000);
-    check('completion confirmation shown', dialogsB.some((m) => m.includes('Quest Complete!')), dialogsB.join(' | '));
+    const completed = await pageB
+      .getByText('Nice spot!')
+      .waitFor({ timeout: 20000 })
+      .then(() => true)
+      .catch(() => false);
+    check('completion confirmation shown', completed);
+    await pageB.getByText('Back to quests').click();
 
     console.log('== History shows the completed quest');
     await pageB.getByText('History').last().click();
@@ -242,11 +281,30 @@ async function main() {
     // first — the tab bar isn't part of that screen)
     console.log('== Sherwin sees completion in history');
     await pageA.goBack();
-    await pageA.getByText('Quests for You').waitFor({ timeout: 20000 });
+    await pageA.getByText('Profile').last().waitFor({ timeout: 20000 });
     await pageA.getByText('History').last().click();
     await pageA.getByText('E2E: the red mailbox').waitFor({ timeout: 20000 });
     check('creator sees completed quest in history', true);
     await pageA.screenshot({ path: path.join(SHOTS, '09-sherwin-history.png') });
+
+    console.log('== Sherwin sees the conversation and replies');
+    await pageA.getByText('E2E: the red mailbox').last().click();
+    await pageA.getByText('Is it near the park?').waitFor({ timeout: 20000 });
+    const timelineOk =
+      (await pageA.getByText('Nadia reacted ❤️').isVisible().catch(() => false)) &&
+      (await pageA.getByText('Nadia found it').isVisible().catch(() => false)) &&
+      (await pageA.getByText('You spotted this').isVisible().catch(() => false));
+    check('creator sees packmate comment, reaction, and find in the timeline', timelineOk);
+    await pageA.getByText('Reply').first().click();
+    const draft = await pageA.getByPlaceholder('Add a comment…').inputValue();
+    check('reply prefills an @mention', draft.startsWith('@Nadia '), draft);
+    await pageA.getByPlaceholder('Add a comment…').fill('@Nadia yep, by the gate!');
+    await pageA.getByLabel('Post comment').click();
+    await pageA.getByText('@Nadia yep, by the gate!').waitFor({ timeout: 10000 });
+    check('creator replies in the thread', true);
+    await pageA.screenshot({ path: path.join(SHOTS, '09b-sherwin-activity.png') });
+    await pageA.goBack();
+    await pageA.getByText('Profile').last().waitFor({ timeout: 20000 });
 
     console.log('== Sherwin ends the walk');
     await pageA.getByText('Profile').last().click();

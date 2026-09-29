@@ -10,6 +10,8 @@
 //   quests INSERT (open)         -> every other active pack member
 //   quests UPDATE -> completed   -> creator
 //   pack_members INSERT (member) -> every other active pack member
+//   quest_comments INSERT        -> quest creator/assignee/finder + prior
+//                                   commenters still in the pack
 //
 // Every recipient gets a `notifications` row (the in-app Activity feed).
 // Recipients with profiles.push_enabled = false skip the push. Every device
@@ -52,20 +54,35 @@ Deno.serve(async (req) => {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
   );
 
-  const [{ data: actor }, { data: pack }, { data: members }] = await Promise.all([
-    supabase.from('profiles').select('display_name').eq('id', event.actorId).maybeSingle(),
-    supabase.from('packs').select('name').eq('id', event.packId).maybeSingle(),
-    supabase
-      .from('pack_members')
-      .select('user_id')
-      .eq('pack_id', event.packId)
-      .eq('status', 'active'),
-  ]);
+  const commentQuestId = payload.table === 'quest_comments' ? payload.record.quest_id : null;
+
+  const [{ data: actor }, { data: pack }, { data: members }, { data: quest }, { data: commenters }] =
+    await Promise.all([
+      supabase.from('profiles').select('display_name').eq('id', event.actorId).maybeSingle(),
+      supabase.from('packs').select('name').eq('id', event.packId).maybeSingle(),
+      supabase
+        .from('pack_members')
+        .select('user_id')
+        .eq('pack_id', event.packId)
+        .eq('status', 'active'),
+      commentQuestId
+        ? supabase
+            .from('quests')
+            .select('id, pack_id, creator_id, assignee_id, finder_id, mode, status, description')
+            .eq('id', commentQuestId)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
+      commentQuestId
+        ? supabase.from('quest_comments').select('author_id').eq('quest_id', commentQuestId)
+        : Promise.resolve({ data: null }),
+    ]);
 
   const plan = planNotification(payload, {
     actorName: actor?.display_name ?? null,
     packName: pack?.name ?? null,
     packMemberIds: (members ?? []).map((m: { user_id: string }) => m.user_id),
+    quest,
+    commenterIds: (commenters ?? []).map((c: { author_id: string }) => c.author_id),
   });
 
   if (!plan || plan.recipientIds.length === 0) {

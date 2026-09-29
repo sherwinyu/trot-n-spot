@@ -19,7 +19,7 @@ export type ActivityNotification = {
   id: string;
   user_id: string;
   actor_id: string | null;
-  type: 'quest_created' | 'quest_completed' | 'pack_joined';
+  type: 'quest_created' | 'quest_completed' | 'quest_commented' | 'pack_joined';
   quest_id: string | null;
   pack_id: string | null;
   title: string;
@@ -85,4 +85,22 @@ export type Quest = {
   completed_at: string | null;
   created_at: string;
   updated_at: string;
+};
+
+export type QuestComment = {
+  id: string;
+  quest_id: string;
+  pack_id: string;
+  author_id: string;
+  body: string;
+  created_at: string;
+};
+
+export type ReactionKind = 'love' | 'laugh' | 'wow' | 'paw' | 'fire';
+
+export type QuestReaction = {
+  quest_id: string;
+  user_id: string;
+  kind: ReactionKind;
+  created_at: string;
 };

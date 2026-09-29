@@ -31,9 +31,10 @@ the source of truth) and debugging spans four systems — see
 | open quest created | every other active pack member | "Nadia spotted something" / description | `/quest/:id` |
 | quest completed | creator | "Nadia found your quest" / description | `/quest/:id` |
 | pack join | existing active members | "Nadia joined Dog Park Crew" | packs screen |
+| quest comment | quest creator, assignee, finder, and earlier commenters still in the pack | "Nadia commented" / comment | `/quest/:id` |
 
 Not notified: someone else completing an open quest, quest edits, the
-owner's own membership row from `create_pack`. Descriptions are clipped
+owner's own membership row from `create_pack`, reactions, comment deletes. Descriptions are clipped
 to ~80 chars.
 
 ## Client behaviour

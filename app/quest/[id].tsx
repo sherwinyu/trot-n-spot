@@ -1,4 +1,4 @@
-import { StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView } from 'react-native';
+import { StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -24,6 +24,7 @@ import { capturePhoto } from '@/lib/photos';
 import { Quest } from '@/types/database';
 import { QuestPhoto } from '@/components/QuestPhoto';
 import { QuestManage } from '@/components/QuestManage';
+import { QuestActivity } from '@/components/QuestActivity';
 import { canManageQuest } from '@/lib/questPermissions';
 
 // Keep the feed's last-good copy in step with a creator edit/delete so the
@@ -158,119 +159,123 @@ export default function QuestDetailScreen() {
 
   return (
     <QuestPage>
-      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-        <QuestPhoto
-          storagePath={quest.photo_path}
-          style={styles.mainPhoto}
-          accessibilityLabel={quest.description || 'Quest photo'}
-        />
-
-        {quest.description && (
-          <Text style={styles.description}>{quest.description}</Text>
-        )}
-
-        <Text style={styles.meta}>
-          {quest.mode === 'open'
-            ? `${memberNames[quest.creator_id] ?? 'A packmate'} spotted this — open to the pack, first to find it wins`
-            : quest.assignee_id === user?.id
-              ? `${memberNames[quest.creator_id] ?? 'A packmate'} left this for you`
-              : `${memberNames[quest.creator_id] ?? 'A packmate'} left this for ${quest.assignee_id ? memberNames[quest.assignee_id] ?? 'a packmate' : 'the pack'}`}
-        </Text>
-
-        <Text style={styles.meta}>
-          Created {new Date(quest.created_at).toLocaleDateString()}
-        </Text>
-
-        {location && (
-          <Text style={styles.meta}>
-            📍 Spotted at {location.lat.toFixed(5)}, {location.lng.toFixed(5)}
-          </Text>
-        )}
-
-        {quest.status === 'completed' && quest.completion_photo_path && (
-          <>
-            <Text style={styles.sectionLabel}>
-              {quest.finder_id
-                ? `Found by ${quest.finder_id === user?.id ? 'you' : memberNames[quest.finder_id] ?? 'a packmate'}!`
-                : 'Found!'}
-            </Text>
-            <QuestPhoto
-              storagePath={quest.completion_photo_path}
-              style={styles.mainPhoto}
-              accessibilityLabel="Completed quest photo"
-            />
-            {quest.completed_at && (
-              <Text style={styles.meta}>
-                Completed {new Date(quest.completed_at).toLocaleDateString()}
-              </Text>
-            )}
-          </>
-        )}
-
-        {user && canManageQuest(quest, user.id) && !capturedUri && (
-          <QuestManage
-            quest={quest}
-            onUpdated={(updated) => {
-              setQuest(updated);
-              patchCachedLists(user.id, (lists) => replaceQuestInLists(lists, updated, user.id));
-            }}
-            onDeleted={() => {
-              patchCachedLists(user.id, (lists) => removeQuestFromLists(lists, quest.id));
-              router.replace('/(tabs)');
-            }}
+      <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView style={styles.container} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          <QuestPhoto
+            storagePath={quest.photo_path}
+            style={styles.mainPhoto}
+            accessibilityLabel={quest.description || 'Quest photo'}
           />
-        )}
 
-        {/* Completion flow for whoever may attempt this quest */}
-        {canAttempt && isActive && !capturedUri && (
-          <TouchableOpacity style={styles.foundButton} onPress={handleFoundIt}>
-            <Text style={styles.foundButtonText}>I Found It!</Text>
-          </TouchableOpacity>
-        )}
+          {quest.description && (
+            <Text style={styles.description}>{quest.description}</Text>
+          )}
 
-        {/* Side-by-side comparison before confirming */}
-        {capturedUri && (
-          <>
-            <Text style={styles.sectionLabel}>Compare</Text>
-            <View style={styles.comparison}>
+          <Text style={styles.meta}>
+            {quest.mode === 'open'
+              ? `${memberNames[quest.creator_id] ?? 'A packmate'} spotted this — open to the pack, first to find it wins`
+              : quest.assignee_id === user?.id
+                ? `${memberNames[quest.creator_id] ?? 'A packmate'} left this for you`
+                : `${memberNames[quest.creator_id] ?? 'A packmate'} left this for ${quest.assignee_id ? memberNames[quest.assignee_id] ?? 'a packmate' : 'the pack'}`}
+          </Text>
+
+          <Text style={styles.meta}>
+            Created {new Date(quest.created_at).toLocaleDateString()}
+          </Text>
+
+          {location && (
+            <Text style={styles.meta}>
+              📍 Spotted at {location.lat.toFixed(5)}, {location.lng.toFixed(5)}
+            </Text>
+          )}
+
+          {quest.status === 'completed' && quest.completion_photo_path && (
+            <>
+              <Text style={styles.sectionLabel}>
+                {quest.finder_id
+                  ? `Found by ${quest.finder_id === user?.id ? 'you' : memberNames[quest.finder_id] ?? 'a packmate'}!`
+                  : 'Found!'}
+              </Text>
               <QuestPhoto
-                storagePath={quest.photo_path}
-                style={styles.comparisonPhoto}
-                accessibilityLabel="Quest photo to match"
+                storagePath={quest.completion_photo_path}
+                style={styles.mainPhoto}
+                accessibilityLabel="Completed quest photo"
               />
-              <Image
-                source={{ uri: capturedUri }}
-                style={styles.comparisonPhoto}
-                contentFit="cover"
-                accessibilityLabel="Your captured photo"
-              />
-            </View>
+              {quest.completed_at && (
+                <Text style={styles.meta}>
+                  Completed {new Date(quest.completed_at).toLocaleDateString()}
+                </Text>
+              )}
+            </>
+          )}
 
-            <View style={styles.confirmActions}>
-              <TouchableOpacity
-                style={styles.retakeButton}
-                onPress={handleFoundIt}
-                disabled={completing}
-              >
-                <Text style={styles.retakeText}>Retake</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.confirmButton}
-                onPress={handleConfirmCompletion}
-                disabled={completing}
-              >
-                {completing ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.confirmText}>Complete Quest</Text>
-                )}
-              </TouchableOpacity>
-            </View>
+          {user && canManageQuest(quest, user.id) && !capturedUri && (
+            <QuestManage
+              quest={quest}
+              onUpdated={(updated) => {
+                setQuest(updated);
+                patchCachedLists(user.id, (lists) => replaceQuestInLists(lists, updated, user.id));
+              }}
+              onDeleted={() => {
+                patchCachedLists(user.id, (lists) => removeQuestFromLists(lists, quest.id));
+                router.replace('/(tabs)');
+              }}
+            />
+          )}
 
-            {error && <Text style={styles.error}>{error}</Text>}
-          </>
-        )}
-      </ScrollView>
+          {/* Completion flow for whoever may attempt this quest */}
+          {canAttempt && isActive && !capturedUri && (
+            <TouchableOpacity style={styles.foundButton} onPress={handleFoundIt}>
+              <Text style={styles.foundButtonText}>I Found It!</Text>
+            </TouchableOpacity>
+          )}
+
+          {/* Side-by-side comparison before confirming */}
+          {capturedUri && (
+            <>
+              <Text style={styles.sectionLabel}>Compare</Text>
+              <View style={styles.comparison}>
+                <QuestPhoto
+                  storagePath={quest.photo_path}
+                  style={styles.comparisonPhoto}
+                  accessibilityLabel="Quest photo to match"
+                />
+                <Image
+                  source={{ uri: capturedUri }}
+                  style={styles.comparisonPhoto}
+                  contentFit="cover"
+                  accessibilityLabel="Your captured photo"
+                />
+              </View>
+
+              <View style={styles.confirmActions}>
+                <TouchableOpacity
+                  style={styles.retakeButton}
+                  onPress={handleFoundIt}
+                  disabled={completing}
+                >
+                  <Text style={styles.retakeText}>Retake</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.confirmButton}
+                  onPress={handleConfirmCompletion}
+                  disabled={completing}
+                >
+                  {completing ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text style={styles.confirmText}>Complete Quest</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+
+              {error && <Text style={styles.error}>{error}</Text>}
+            </>
+          )}
+
+          {!capturedUri && <QuestActivity quest={quest} />}
+        </ScrollView>
+      </KeyboardAvoidingView>
     </QuestPage>
   );
 }

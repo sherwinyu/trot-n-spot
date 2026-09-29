@@ -16,6 +16,7 @@ import { ActivityNotification } from '@/types/database';
 const ACTIVITY_ICON: Record<ActivityNotification['type'], string> = {
   quest_created: '🔍',
   quest_completed: '✅',
+  quest_commented: '💬',
   pack_joined: '🐾',
 };
 
