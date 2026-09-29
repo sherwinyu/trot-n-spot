@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/lib/supabase';
 export type Connection = { url: string };
 const DEFAULT_URL = process.env.EXPO_PUBLIC_RECEIPTS_API_URL ?? '';
+export const RECEIPTS_SERVICE_CONFIGURED = Boolean(DEFAULT_URL);
 export function createReceiptClient(userId: string) {
   const scope = `groceries.${userId}`;
   let active = true;
@@ -11,11 +12,15 @@ export function createReceiptClient(userId: string) {
     return current;
   }
   async function loadConnection() {
-    const url = (await AsyncStorage.getItem(`${scope}.apiURL`)) ?? DEFAULT_URL;
+    // A released app owns its destination; old development settings must not
+    // redirect receipt photos or the user's Supabase token to another server.
+    const url = DEFAULT_URL || (await AsyncStorage.getItem(`${scope}.apiURL`)) || '';
     current = { url };
     return current;
   }
   async function saveConnection(value: Connection) {
+    if (RECEIPTS_SERVICE_CONFIGURED)
+      throw new Error('The receipt connection is managed by Trot n Spot.');
     const url = new URL(value.url.trim());
     if (!['https:', 'http:'].includes(url.protocol))
       throw new Error('Enter an http or https API address.');

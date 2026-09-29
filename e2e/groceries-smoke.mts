@@ -211,18 +211,12 @@ await page.route('http://localhost:54321/**', async (route) => {
 try {
   await page.goto('http://localhost:8081');
   await page.getByRole('tab', { name: /Groceries/ }).click();
-  await page.getByRole('button', { name: 'Explore with sample data' }).click();
-  await page.getByText('$824.56', { exact: true }).waitFor();
+  await page.getByText('Start with one receipt.').waitFor();
+  assert.equal(await page.getByLabel('Server address', { exact: true }).count(), 0);
+  assert.equal(await page.getByRole('button', { name: 'Connection settings' }).count(), 0);
   await page.screenshot({ path: resolve(screens, 'explore.png') });
   await page.getByRole('button', { name: 'Scan', exact: true }).click();
   await page.screenshot({ path: resolve(screens, 'scan.png') });
-  await page.getByRole('button', { name: 'Connection settings' }).click();
-  await page
-    .getByLabel('Server address', { exact: true })
-    .fill('http://localhost:3001');
-  await page.getByRole('button', { name: 'Connect', exact: true }).click();
-  await page.getByText('Start with one receipt.').waitFor();
-  await page.getByRole('button', { name: 'Scan', exact: true }).click();
   const chooserPromise = page.waitForEvent('filechooser');
   await page.getByRole('button', { name: 'Import image files' }).click();
   const chooser = await chooserPromise;
@@ -273,21 +267,17 @@ try {
   );
   await page.reload();
   await page.getByRole('tab', { name: /Groceries/ }).click();
-  await page.getByRole('button', { name: 'Connect', exact: true }).waitFor();
+  await page.getByText('Start with one receipt.').waitFor();
   assert.equal(
     await page.getByLabel('App access token', { exact: true }).count(),
     0,
   );
-  await page
-    .getByLabel('Server address', { exact: true })
-    .fill('http://localhost:3001');
-  await page.getByRole('button', { name: 'Connect', exact: true }).click();
-  await page.getByText('Start with one receipt.').waitFor();
+  assert.equal(await page.getByLabel('Server address', { exact: true }).count(), 0);
   await page.screenshot({ path: resolve(screens, 'account-isolation.png') });
   assert.equal(errors.length, 0, errors.join('\n'));
   await writeFile(
     resolve(screens, 'ui-check.txt'),
-    'PASS: demo, connection, image import, failed upload survives reload, retry, persistent upload queue, real API, worker, history, source image, manual correction, analytics, product history. Chromium 390×844. Vision response and object storage injected; embedded Postgres. No page errors.\n',
+    'PASS: automatic connection without server setup, account isolation, image import, failed upload survives reload, retry, persistent upload queue, real API, worker, history, source image, manual correction, analytics, product history. Chromium 390×844. Vision response and object storage injected; embedded Postgres. No page errors.\n',
   );
   console.log('Trot n Spot groceries smoke test passed; screenshots saved.');
 } finally {
