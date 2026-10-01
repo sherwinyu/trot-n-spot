@@ -73,7 +73,8 @@ Of the top-level comments whose body starts `## Checkpoint`, the one with the gr
 `createdAt` — by timestamp, not by position, because the listing carries no documented
 sort argument and reading the wrong end silently reports the *oldest* checkpoint as
 current. Adjacent identical bodies are one checkpoint posted twice. An initiative with
-no checkpoint is reported as unshaped, not as an error.
+children and no checkpoint is reported as unshaped, not as an error; a standalone
+issue posts no checkpoint by design — the issue itself is the state.
 
 ### 4. Gather reality
 

@@ -15,10 +15,11 @@ scoping in the session transcript, verification in the PR's `## Evidence` commen
 An issue is not a log of the session that ran it; a stand-alone issue posts no
 checkpoints, because the issue itself is the state.
 
-The canonical blocks are append-only. Everything else is ephemera — mirrored session
-chatter, superseded progress notes, the second copy of a double-post — and is
-delete-on-sight, so that scrolling to the bottom of an issue reaches something
-current. A reader trusts three things: the issue's fields, the newest
+The canonical blocks are append-only, and so is everything that carries the task:
+briefs, answers, specs, anything a human wrote. Ephemera is only transient agent
+noise — mirrored session chatter, superseded progress notes, the second copy of a
+double-post — and is delete-on-sight, so that scrolling to the bottom of an issue
+reaches something current. A reader trusts three things: the issue's fields, the newest
 `## Checkpoint`, and the open PR. Nothing older is current and nothing older needs
 diffing.
 
@@ -37,7 +38,8 @@ Comments on the parent issue are **append-only**. A checkpoint records what chan
 since the last one and what the next reader should look at. Never edit a prior
 checkpoint; publish a new one that supersedes it. Two adjacent checkpoints with
 identical bodies are one checkpoint posted twice — read them as one, and delete the
-second copy as ephemera when you notice it.
+second copy when it carries no replies; a duplicate with a `## Decisions` or other
+reply thread keeps its thread.
 
 ```
 ## Checkpoint <ISO date> · <runtime>
