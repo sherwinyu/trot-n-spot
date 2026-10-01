@@ -30,7 +30,8 @@ per answer, not questions per round.
 Skills that record progress — `wayfinder`, `to-tickets`, `implement`, `code-review` —
 use the state mechanics in [`project-state.md`](./project-state.md): append-only
 checkpoint comments on the Linear parent issue, `D<n>` decisions, claim comment plus
-`In Progress` before implementing, and an `## Evidence` comment per PR round. Where a
+`In Progress` before implementing, and an `## Evidence` comment per PR round, posted
+on the PR. Where a
 vendored skill writes local ticket or plan files instead, Linear wins. To write or read
 that state directly, use the repo-local `checkpoint` and `resume` skills rather than
 re-deriving the formats; `handoff` is unrelated — conversation context in a temp file,
@@ -54,7 +55,7 @@ computing the frontier. Assignee stays a human-facing field with no workflow mea
   replace `gh` when the CLI is unavailable. See `issue-tracker.md`.
 - Cross-project resume is read-only and uses each project's own repository for
   PR and staleness checks. It does not authorize dispatching unrelated work.
-- For a standalone issue with no parent, `checkpoint` writes to that issue.
+- A standalone issue with no parent posts no checkpoints — the issue itself is the state.
 - Browser screenshots cover web changes; native UI changes use emulator/device
   screenshots. Follow the existing testing guide rather than an editor-specific
   Playwright fixture from a historical example.

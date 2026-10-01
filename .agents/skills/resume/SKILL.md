@@ -84,8 +84,8 @@ Independently of what the checkpoint says:
 - open PRs: `gh pr list --limit 100 --json number,title,headRefName,isDraft,updatedAt,statusCheckRollup`.
   `--limit` is not optional: the default is 30 and the truncation is silent. A PR
   belongs to an initiative when its `headRefName` starts `devin/<child issue key>-`;
-- for every claim and every `## Evidence` comment, its base SHA measured against
-  `origin/main` with the staleness recipe in `project-state.md`.
+- for every claim, and for the `## Evidence` comment on each open PR, its base SHA
+  measured against `origin/main` with the staleness recipe in `project-state.md`.
 
 ### 5. Diff and report the disagreements
 

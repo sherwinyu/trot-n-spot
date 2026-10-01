@@ -56,10 +56,17 @@ its call.
 | Read the frontier | `linear_list_issues` with `team: "Sherwin"`, `parentId` = the parent issue, `label: "ready-for-agent"`; drop issues with an unresolved `blockedBy` edge or an existing `## Claim` comment. |
 | Read the human queue | `linear_list_issues` with `label: "ready-for-human"`, unscoped by project, ordered by priority. |
 | Claim an issue | `linear_save_comment` with the claim block, then `linear_save_issue` with `id` and `state: "In Progress"`. |
-| Post evidence on the issue | `linear_save_comment` with the `## Evidence` block and `issueId` = the issue. |
-| Post the same evidence on the PR | GitHub, not Linear: the PR-comment tool of the runtime in use (`gh pr comment <n> --body-file` from a shell). Identical body. |
+| Post evidence | GitHub, not Linear: the PR-comment tool of the runtime in use (`gh pr comment <n> --body-file` from a shell). The issue gets the PR link, not a copy. |
 | Embed a screenshot | `linear_prepare_attachment_upload`, `PUT` the bytes to the signed URL, then `linear_create_attachment_from_upload`. |
 | Record ordering | `linear_save_issue` fields `blockedBy` / `blocks`. |
+| Delete a comment | `linear_delete_comment` with `id`. |
+
+`linear_save_comment` has been observed to create two identical comments from one call.
+After posting any workflow comment, re-list the issue's comments with
+`linear_list_comments` and `linear_delete_comment` the second copy when two share a
+body and a timestamp — this pass is required, not optional. The same delete covers
+the other ephemera in `project-state.md`'s signal budget: mirrored session chatter
+and superseded progress notes may be removed on sight.
 
 States available in the `Sherwin` team: `Backlog`, `Todo`, `In Progress`,
 `In Review`, `Done`, `Canceled`, `Duplicate`. There are no workflow-specific states;
