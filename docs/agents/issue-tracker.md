@@ -57,7 +57,8 @@ its call.
 | Read the human queue | `linear_list_issues` with `label: "ready-for-human"`, unscoped by project, ordered by priority. |
 | Claim an issue | `linear_save_comment` with the claim block, then `linear_save_issue` with `id` and `state: "In Progress"`. |
 | Post evidence | GitHub, not Linear: the PR-comment tool of the runtime in use (`gh pr comment <n> --body-file` from a shell). The issue gets the PR link, not a copy. |
-| Embed a screenshot | `linear_prepare_attachment_upload`, `PUT` the bytes to the signed URL, then `linear_create_attachment_from_upload`. |
+| Embed an image in a PR comment | `![alt](/absolute/path.png)` inside the comment body — the runtime's PR-comment tool uploads it (Devin's tools auto-upload embedded local paths); a GitHub web-UI drag-drop produces the same durable URL. |
+| Embed an image in a Linear comment | `linear_prepare_attachment_upload`, `PUT` the bytes to the signed URL, then `linear_create_attachment_from_upload`. |
 | Record ordering | `linear_save_issue` fields `blockedBy` / `blocks`. |
 | Delete a comment | `linear_delete_comment` with `id`. |
 
