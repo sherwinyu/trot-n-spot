@@ -6,6 +6,22 @@ claim and evidence formats; other docs link here rather than restating them.
 
 The tracker and its tool calls are in [`issue-tracker.md`](./issue-tracker.md).
 
+## Signal budget
+
+An issue carries a few durable writes: its fields (state, labels, assignee), its
+`## Claim`, its `## Decisions` replies, and — on a parent — its `## Checkpoint`s.
+Everything else about the work lives where a reader already looks: progress and
+scoping in the session transcript, verification in the PR's `## Evidence` comment.
+An issue is not a log of the session that ran it; a stand-alone issue posts no
+checkpoints, because the issue itself is the state.
+
+The canonical blocks are append-only. Everything else is ephemera — mirrored session
+chatter, superseded progress notes, the second copy of a double-post — and is
+delete-on-sight, so that scrolling to the bottom of an issue reaches something
+current. A reader trusts three things: the issue's fields, the newest
+`## Checkpoint`, and the open PR. Nothing older is current and nothing older needs
+diffing.
+
 ## The initiative issue
 
 One Linear parent issue per initiative. Child issues hang off it via `parentId`,
@@ -20,8 +36,8 @@ decision depends on it. State that matters goes in comments.
 Comments on the parent issue are **append-only**. A checkpoint records what changed
 since the last one and what the next reader should look at. Never edit a prior
 checkpoint; publish a new one that supersedes it. Two adjacent checkpoints with
-identical bodies are one checkpoint posted twice — read them as one, and still edit
-neither.
+identical bodies are one checkpoint posted twice — read them as one, and delete the
+second copy as ephemera when you notice it.
 
 ```
 ## Checkpoint <ISO date> · <runtime>
@@ -102,8 +118,8 @@ what base, after an interruption.
 
 ## Evidence
 
-Every PR round posts one `## Evidence` comment, with the same body on the pull request
-and on the issue:
+Evidence is a review artifact, so it lives on the pull request and nowhere else —
+one `## Evidence` comment per PR round:
 
 ```
 ## Evidence · base <sha>
@@ -115,17 +131,21 @@ Residual risk: <what is still unverified> | none
 Rules:
 
 - Test output is mandatory: the command run and its result, not a claim that it passed.
-- Any UI-visible change carries browser screenshots or native/device screenshots, as appropriate to the changed surface, and the PR description itself embeds a preview image (or GIF/recording for animations and interactions) so reviewers see the result without opening the app. The capture recipe is in
-  [`../testing.md`](../testing.md).
+- Any UI-visible change carries browser screenshots or native/device screenshots, as
+  appropriate to the changed surface — attached to the comment, never committed to
+  the repository — and the PR description itself embeds a preview image (or
+  GIF/recording for animations and interactions) so reviewers see the result without
+  opening the app. The capture recipe is in [`../testing.md`](../testing.md). A
+  GitHub comment image lives as long as the PR that hosts it; a committed PNG is
+  repo weight forever.
 - Video is optional and welcome; for animated or gesture-driven changes a GIF/recording is expected.
-- "Same body" means the same lines, not the same bytes: images are uploaded to each host
-  (see [`issue-tracker.md`](./issue-tracker.md)), so the `Screenshots:` links differ
-  between the pull request and the issue. Nothing else may differ.
+- The issue gets the PR link and a status change, not a copy of the comment. The
+  session transcript already holds the full run.
 - Workflow comments start with their own heading — `## Checkpoint`, `## Claim`,
   `## Evidence` — with no preamble. The AI-authorship prefix that `issue-tracker.md`
   requires applies to triage comments only; readers match on the leading heading.
 - Verification often happens on a laptop, so richer evidence beats minimal evidence.
-- A runtime that cannot post images or reach Linear records the evidence and the
+- A runtime that cannot post images or reach GitHub records the evidence and the
   access limitation for an available authorized runtime to publish. Do not claim
   publication or dispatch occurred without a confirmed result; name the runtime
   that performed the work.

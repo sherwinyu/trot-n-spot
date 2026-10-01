@@ -34,7 +34,7 @@ be reviewed without the earlier one. Ticket bookkeeping is not such a dependency
 Granularity is decided when tickets are written: scope each ticket so that it is one
 reviewable PR. If several existing tickets can only sensibly ship as one PR, that is a
 ticketing mistake, not a licence to fan out — merge or re-cut the tickets, or state in
-the PR body which issues it closes and post the same `## Evidence` comment on each.
+the PR body which issues it closes; the PR's `## Evidence` comment is the only copy.
 
 Branch names: `<runtime>/<issue-key>-<slug>`, for example
 `codex/she-123-agent-workflow` or `devin/she-123-agent-workflow`. Use the same
