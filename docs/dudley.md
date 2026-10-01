@@ -63,7 +63,7 @@ DUDLEY_WEB_BUILD=dist node e2e/dudley-smoke.cjs
 
 Set `BROWSER_EXECUTABLE_PATH` to use an existing Chromium installation. The
 script intercepts network requests, supplies fixture auth and backend responses,
-and captures `docs/evidence/dudley/`. It checks empty quests/boop, confirmed walk
+and captures `test-results/evidence/dudley/` (gitignored). It checks empty quests/boop, confirmed walk
 transitions, quest loading/detail navigation controls, confirmed and offline
 completion, and reduced-motion rendering. Receipt processing and feed refresh
 are not covered by this browser script.

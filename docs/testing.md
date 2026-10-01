@@ -18,3 +18,6 @@ Jest is configured in `package.json` and `jest.setup.js`. There is no configured
 lint script. Use the current package scripts rather than older setup examples.
 Report actual command results and unavailable environments in evidence; do not
 claim a browser check verifies real camera, GPS, push, or native offline storage.
+Evidence posts once, on the PR as a comment with uploaded attachments — nothing
+evidence-shaped is committed to the repository (see
+[`agents/project-state.md`](agents/project-state.md)).

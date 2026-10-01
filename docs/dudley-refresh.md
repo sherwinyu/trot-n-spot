@@ -80,9 +80,12 @@ ears settle. Paws stay planted. No overlap or motion lines. Real transparency.â€
   `DUDLEY_REFRESH_ONLY=1 DUDLEY_WEB_BUILD=dist node e2e/dudley-smoke.cjs`.
 - Optionally set `DUDLEY_ANIMATION_FRAMES` to capture the real interaction for a
   GIF; set `BROWSER_EXECUTABLE_PATH` for an installed Chromium executable.
-- Browser evidence in `docs/evidence/dudley-refresh/` covers partial pull, wide
-  eyes, pop, shake, reduced motion, History and Groceries; `rise-demo.gif` is
-  the captured pull/pop/shake interaction (`peek-sniff-demo.gif` is the earlier
+- Browser captures land in `test-results/evidence/dudley-refresh/` (gitignored),
+  covering partial pull, wide
+  eyes, pop, shake, reduced motion, History and Groceries;
+  [`rise-demo.gif`](dudley-refresh/rise-demo.gif) is
+  the captured pull/pop/shake interaction ([`peek-sniff-demo.gif`](dudley-refresh/peek-sniff-demo.gif)
+  is the earlier
   uncover-in-place version). The script also checks
   backoff, touch cancellation, no accidental card navigation, duplicate refresh,
   scrolling away from the top, failure/retry, and setup mode without refresh.
