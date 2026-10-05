@@ -14,7 +14,7 @@ project mapping and tool operations.
 
 | Step | Action |
 | --- | --- |
-| Shape | Use `wayfinder` / `grilling`; ask one question at a time with a recommendation. Record numbered decisions in a parent issue checkpoint. |
+| Shape | Use `wayfinder` / `grilling`; ask one question at a time with a recommendation. Record numbered decisions as `+++` entries in the parent's `## Log` thread, cited in the checkpoint. |
 | Ticket | Use `to-spec` / `to-tickets`; create self-contained Linear children with native dependencies and `ready-for-agent` labels. |
 | Resume | Use `resume` for a read-only report: compare checkpoints with live issues, PRs, and each repository's main branch. |
 | Claim | For dispatched issue work, post a Claim and move to In Progress before implementation. Assignment alone is not a claim. |

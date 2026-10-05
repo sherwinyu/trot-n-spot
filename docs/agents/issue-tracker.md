@@ -50,7 +50,9 @@ its call.
 | Operation | Call |
 | --- | --- |
 | Post a checkpoint | `linear_save_comment` with `issueId` = the parent issue and the checkpoint block as `body`. Never pass `id`: a new comment, never an edit. |
+| Log a discussion or decision entry | `linear_save_comment` with `issueId` = the issue, `parentId` = the issue's `## Log` comment `id`, and a `+++`-delimited section as `body`. No `## Log` comment yet: post one first as a top-level comment whose body is `## Log`. |
 | Read the newest checkpoint | `linear_list_comments` with `issueId` = the parent issue; of the top-level comments (`parentId: null`) whose body starts `## Checkpoint`, take the one with the greatest `createdAt`. The listing is newest-first today, but carries no documented sort argument, so compare timestamps rather than trusting the position. |
+| Read the log thread | `linear_list_comments` with `issueId` = the issue; the top-level comment whose body starts `## Log` is the thread, and its entries carry `parentId` = its `id`. |
 | Read the active initiatives | Three `linear_list_issues` calls with `team: "Sherwin"` — `label: "ready-for-agent"`, `label: "ready-for-human"`, and `state: "In Progress"` — unioned client-side by issue id, plus `state: "In Review"` if that state is in use. One call cannot OR two labels or mix labels with states. The distinct `parentId`s of the union are the active initiatives; issues with no `parentId` stay in the union as single-issue initiatives. |
 | Read the PRs of an initiative | GitHub, not Linear: `gh pr list --repo <initiative-repository> --state all --limit 100 --json number,title,body,url,mergedAt,headRefName`, or the connected GitHub tools; match explicit issue/PR links first, then `<runtime>/<issue-key>-` for each child key (branch convention in [`../git-workflow.md`](../git-workflow.md)). Always pass `--limit` and page further when truncated; the CLI default is 30. |
 | Read the frontier | `linear_list_issues` with `team: "Sherwin"`, `parentId` = the parent issue, `label: "ready-for-agent"`; drop issues with an unresolved `blockedBy` edge or an existing `## Claim` comment. |
@@ -59,6 +61,7 @@ its call.
 | Post evidence | GitHub, not Linear: the PR-comment tool of the runtime in use (`gh pr comment <n> --body-file` from a shell). The issue gets the PR link, not a copy. |
 | Embed an image in a PR comment | `![alt](/absolute/path.png)` inside the comment body — the runtime's PR-comment tool uploads it (Devin's tools auto-upload embedded local paths); a GitHub web-UI drag-drop produces the same durable URL. |
 | Embed an image in a Linear comment | `linear_prepare_attachment_upload`, `PUT` the bytes to the signed URL, then `linear_create_attachment_from_upload`. |
+| Write a collapsed section | `+++ <title>` opens and `+++` closes — Linear's native markdown, which folds in descriptions and comments. `<details>` renders as literal text. |
 | Record ordering | `linear_save_issue` fields `blockedBy` / `blocks`. |
 | Delete a comment | `linear_delete_comment` with `id`. |
 

@@ -29,7 +29,8 @@ per answer, not questions per round.
 
 Skills that record progress — `wayfinder`, `to-tickets`, `implement`, `code-review` —
 use the state mechanics in [`project-state.md`](./project-state.md): append-only
-checkpoint comments on the Linear parent issue, `D<n>` decisions, claim comment plus
+checkpoint comments on the Linear parent issue, `D<n>` decisions logged as `+++`
+entries in the issue's `## Log` thread, claim comment plus
 `In Progress` before implementing, and an `## Evidence` comment per PR round, posted
 on the PR. Where a
 vendored skill writes local ticket or plan files instead, Linear wins. To write or read
