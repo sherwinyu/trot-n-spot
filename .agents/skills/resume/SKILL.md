@@ -73,7 +73,8 @@ Of the top-level comments whose body starts `## Checkpoint`, the one with the gr
 `createdAt` — by timestamp, not by position, because the listing carries no documented
 sort argument and reading the wrong end silently reports the *oldest* checkpoint as
 current. Adjacent identical bodies are one checkpoint posted twice. An initiative with
-no checkpoint is reported as unshaped, not as an error.
+children and no checkpoint is reported as unshaped, not as an error; a standalone
+issue posts no checkpoint by design — the issue itself is the state.
 
 ### 4. Gather reality
 
@@ -84,8 +85,10 @@ Independently of what the checkpoint says:
 - open PRs: `gh pr list --limit 100 --json number,title,headRefName,isDraft,updatedAt,statusCheckRollup`.
   `--limit` is not optional: the default is 30 and the truncation is silent. A PR
   belongs to an initiative when its `headRefName` starts `devin/<child issue key>-`;
-- for every claim and every `## Evidence` comment, its base SHA measured against
-  `origin/main` with the staleness recipe in `project-state.md`.
+- for every claim, and for the `## Evidence` comment on each open PR, its base SHA
+  measured against `origin/main` with the staleness recipe in `project-state.md`.
+  `gh pr list` returns no comment bodies — pull them per PR with
+  `gh pr view <n> --json comments` or add `comments` to the list's `--json` fields.
 
 ### 5. Diff and report the disagreements
 

@@ -14,13 +14,13 @@ project mapping and tool operations.
 
 | Step | Action |
 | --- | --- |
-| Shape | Use `wayfinder` / `grilling`; ask one question at a time with a recommendation. Record numbered decisions in a parent issue checkpoint. |
+| Shape | Use `wayfinder` / `grilling`; ask one question at a time with a recommendation. Record numbered decisions as `+++` entries in the parent's `## Log` thread, cited in the checkpoint. |
 | Ticket | Use `to-spec` / `to-tickets`; create self-contained Linear children with native dependencies and `ready-for-agent` labels. |
 | Resume | Use `resume` for a read-only report: compare checkpoints with live issues, PRs, and each repository's main branch. |
 | Claim | For dispatched issue work, post a Claim and move to In Progress before implementation. Assignment alone is not a claim. |
 | Implement | One issue, one branch, one PR into main; see [git workflow](docs/git-workflow.md). |
-| Verify | Publish matching Evidence on the PR and issue: command results, relevant screenshots, residual risk, base SHA. |
-| Checkpoint | Append a compact Checkpoint on the parent (or standalone issue) at the session boundary; `handoff` is temporary conversation context only. |
+| Verify | Publish one `## Evidence` comment on the PR only: command results, screenshots attached for UI-visible changes, residual risk, base SHA. The issue gets the PR link and the status change. |
+| Checkpoint | Append a compact Checkpoint on the parent issue at the session boundary; a standalone issue is its own state and gets none. `handoff` is temporary conversation context only. |
 
 Use [triage labels](docs/agents/triage-labels.md) for agent/human queues and
 [domain guidance](docs/agents/domain.md) for glossary and ADR discovery.

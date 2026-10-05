@@ -6,6 +6,25 @@ claim and evidence formats; other docs link here rather than restating them.
 
 The tracker and its tool calls are in [`issue-tracker.md`](./issue-tracker.md).
 
+## Signal budget
+
+An issue carries a few durable writes: its fields (state, labels, assignee), its
+`## Claim`, its `## Log` thread, and — on a parent — its `## Checkpoint`s.
+Everything else about the work lives where a reader already looks: progress and
+scoping in the session transcript, discussion and decisions in the `## Log`
+thread, implementation review and verification on the pull request. The PR is
+the implementing agent's surface; the issue is the human's. An issue is not a
+log of the session that ran it; a stand-alone issue posts no checkpoints,
+because the issue itself is the state.
+
+The canonical blocks are append-only, and so is everything that carries the task:
+briefs, answers, specs, anything a human wrote. Ephemera is only transient agent
+noise — mirrored session chatter, superseded progress notes, the second copy of a
+double-post — and is delete-on-sight, so that scrolling to the bottom of an issue
+reaches something current. A reader trusts three things: the issue's fields, the newest
+`## Checkpoint`, and the open PR. Nothing older is current and nothing older needs
+diffing.
+
 ## The initiative issue
 
 One Linear parent issue per initiative. Child issues hang off it via `parentId`,
@@ -20,8 +39,9 @@ decision depends on it. State that matters goes in comments.
 Comments on the parent issue are **append-only**. A checkpoint records what changed
 since the last one and what the next reader should look at. Never edit a prior
 checkpoint; publish a new one that supersedes it. Two adjacent checkpoints with
-identical bodies are one checkpoint posted twice — read them as one, and still edit
-neither.
+identical bodies are one checkpoint posted twice — read them as one, and delete the
+second copy when it carries no replies; a duplicate with a `## Decisions` or other
+reply thread keeps its thread.
 
 ```
 ## Checkpoint <ISO date> · <runtime>
@@ -60,23 +80,48 @@ The newest checkpoint is a claim about the world, not the world. A reader diffs 
 against the Linear issue states, the open PRs and `main`, and reports every
 disagreement it finds instead of believing the comment.
 
+## The log thread
+
+Discussion that belongs on the issue — wayfinding, architectural debate,
+technical planning, and the decisions that settle them — lives in one thread: a
+single top-level `## Log` comment, created the first time the issue has
+something worth keeping, with every entry a **threaded reply written as a
+collapsed section**:
+
+```
++++ <YYYY-MM-DD> — <topic, one line>
+<the argument, the answer, the link that owns the detail>
++++
+```
+
+`+++` is Linear's native collapsible markdown — `<details>` renders as literal
+text. Collapsed, the thread reads as a dated table of contents; one entry is one
+self-contained note that links the issue, PR or ADR owning the detail.
+
+What does not go here: implementation-level code review (the PR's review
+threads — the PR is the implementing agent's surface), verification (the PR's
+`## Evidence` comment), and the structured fields (claim, checkpoint, labels).
+
 ## Decisions
 
-Settled decisions are numbered `D1..Dn` per initiative, and each one appears in the
-`Settled:` line of the checkpoint that settled it. The number is the durable handle:
-later tickets and comments cite `D4`, not a paraphrase. Numbers are never reused, so
-the next free number is the maximum `D<n>` over **every** checkpoint on the parent
-issue — checkpoints with no `Settled:` line are common, so the newest one alone does
-not give it.
+Settled decisions are numbered `D1..Dn` per initiative, logged as `+++` entries
+in the issue's `## Log` thread — titled `D<n> — <the decision in one line>
+(<link>)`, with the human's answer quoted verbatim in the body — and cited in
+the `Settled:` line of the checkpoint that settled them. The number is the
+durable handle: later tickets and comments cite `D4`, not a paraphrase. Numbers
+are never reused, so the next free number is the maximum `D<n>` over the
+parent's `## Log` thread **and** every checkpoint on the parent issue —
+checkpoints with no `Settled:` line are common, so neither source alone gives
+it.
 
-A decision that constrains code graduates out of the checkpoint log:
+A decision that constrains code graduates out of the log:
 
 - hard to reverse → an ADR in `docs/adr/`;
 - vocabulary the codebase should use → root `CONTEXT.md` (see
   [`domain.md`](./domain.md)).
 
-Decisions about how the workflow runs stay in the checkpoint log. A later checkpoint
-may revise an earlier decision; it says which `D<n>` it revises and why.
+Decisions about how the workflow runs stay in the log thread. A later decision
+may revise an earlier one; it says which `D<n>` it revises and why.
 
 ## Frontier and queues
 
@@ -102,8 +147,8 @@ what base, after an interruption.
 
 ## Evidence
 
-Every PR round posts one `## Evidence` comment, with the same body on the pull request
-and on the issue:
+Evidence is a review artifact, so it lives on the pull request and nowhere else —
+one `## Evidence` comment per PR round:
 
 ```
 ## Evidence · base <sha>
@@ -115,17 +160,23 @@ Residual risk: <what is still unverified> | none
 Rules:
 
 - Test output is mandatory: the command run and its result, not a claim that it passed.
-- Any UI-visible change carries browser screenshots or native/device screenshots, as appropriate to the changed surface, and the PR description itself embeds a preview image (or GIF/recording for animations and interactions) so reviewers see the result without opening the app. The capture recipe is in
-  [`../testing.md`](../testing.md).
+- Any UI-visible change carries browser screenshots or native/device screenshots, as
+  appropriate to the changed surface — attached to the comment, never committed to
+  the repository — and the PR description itself embeds a preview image (or
+  GIF/recording for animations and interactions) so reviewers see the result without
+  opening the app. The capture recipe is in [`../testing.md`](../testing.md). A
+  GitHub comment image lives as long as the PR that hosts it; a committed PNG is
+  repo weight forever.
 - Video is optional and welcome; for animated or gesture-driven changes a GIF/recording is expected.
-- "Same body" means the same lines, not the same bytes: images are uploaded to each host
-  (see [`issue-tracker.md`](./issue-tracker.md)), so the `Screenshots:` links differ
-  between the pull request and the issue. Nothing else may differ.
+- The issue gets the PR link and a status change, not a copy of the comment —
+  the session transcript already holds the full run. Review of the diff stays in
+  the PR's own threads as well; the PR is the implementing agent's surface, the
+  `## Log` thread is the human's.
 - Workflow comments start with their own heading — `## Checkpoint`, `## Claim`,
   `## Evidence` — with no preamble. The AI-authorship prefix that `issue-tracker.md`
   requires applies to triage comments only; readers match on the leading heading.
 - Verification often happens on a laptop, so richer evidence beats minimal evidence.
-- A runtime that cannot post images or reach Linear records the evidence and the
+- A runtime that cannot post images or reach GitHub records the evidence and the
   access limitation for an available authorized runtime to publish. Do not claim
   publication or dispatch occurred without a confirmed result; name the runtime
   that performed the work.
