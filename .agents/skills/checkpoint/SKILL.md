@@ -33,8 +33,9 @@ it. A fresh file per session is the sediment this workflow exists to avoid.
 ### 1. Identify the initiative
 
 The parent issue, from the argument if given, otherwise the `parentId` of the issue
-this session worked on. When neither resolves it, ask once, naming the candidate you
-would pick.
+this session worked on. When the worked issue has no parent it is standalone and
+posts no checkpoint at all — the issue itself is the state, so stop. When neither
+resolves it, ask once, naming the candidate you would pick.
 
 ### 2. Read the newest checkpoint
 

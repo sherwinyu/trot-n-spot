@@ -87,6 +87,8 @@ Independently of what the checkpoint says:
   belongs to an initiative when its `headRefName` starts `devin/<child issue key>-`;
 - for every claim, and for the `## Evidence` comment on each open PR, its base SHA
   measured against `origin/main` with the staleness recipe in `project-state.md`.
+  `gh pr list` returns no comment bodies — pull them per PR with
+  `gh pr view <n> --json comments` or add `comments` to the list's `--json` fields.
 
 ### 5. Diff and report the disagreements
 
