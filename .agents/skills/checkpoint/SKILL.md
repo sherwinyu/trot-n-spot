@@ -41,9 +41,10 @@ would pick.
 `Since last:` is a diff, so it needs its other side: the newest top-level `##
 Checkpoint` comment, by `createdAt` rather than by position in the listing.
 
-While that comment list is in hand, scan **every** checkpoint on the issue for `D<n>`
-and take the maximum — the newest checkpoint often has no `Settled:` line at all, and
-numbering from it would reuse a number that later tickets already cite.
+While that comment list is in hand, scan the `## Log` thread's `+++` entries **and**
+**every** checkpoint on the issue for `D<n>` and take the maximum — the newest
+checkpoint often has no `Settled:` line at all, and numbering from either source
+alone would reuse a number that later tickets already cite.
 
 ### 3. Gather what changed from reality, not memory
 
@@ -71,9 +72,11 @@ restates what a linked artifact already says.
   chosen from ambition.
 - `Since last:` what moved, including merged PRs by number.
 - `Settled:` one line per decision that became final in this session, numbered from the
-  next free `D<n>`, each with a link to where it was decided. A decision that revises an
-  earlier one says which. No decisions settled means no `Settled:` line — not an empty
-  one.
+  next free `D<n>`, each linking its `## Log` entry. The decision itself is a `+++`
+  reply on the issue's `## Log` comment — create that comment first when the issue has
+  none — titled `D<n> — …` and quoting the human's own words in the body. A decision
+  that revises an earlier one says which. No decisions settled means no `Settled:`
+  line — not an empty one.
 - `Frontier:` the live frontier query's result, not last checkpoint's list.
 - `Blocked on human:` exactly one decision, citing the issue that carries it when one
   does, or `none`. Two decisions means picking the one that gates the others.
