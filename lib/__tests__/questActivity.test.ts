@@ -26,6 +26,10 @@ const comment = (id: string, author_id: string, created_at: string): QuestCommen
   pack_id: 'p1',
   author_id,
   body: `comment ${id}`,
+  kind: 'reply',
+  photo_path: null,
+  photo_full_path: null,
+  photo_thumbnail_path: null,
   created_at,
 });
 

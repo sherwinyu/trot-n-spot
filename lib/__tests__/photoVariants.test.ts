@@ -1,6 +1,14 @@
-import { getPhotoVariantPaths } from '../photoVariants';
+import { getCommentPhotoPaths, getPhotoVariantPaths } from '../photoVariants';
 
 describe('getPhotoVariantPaths', () => {
+  it('isolates every reply so retakes and different photos cannot overwrite each other', () => {
+    expect(getCommentPhotoPaths('user', 'quest', 'comment')).toEqual({
+      fullPath: 'user/quest/comments/comment/full.jpg',
+      detailPath: 'user/quest/comments/comment/detail.jpg',
+      thumbnailPath: 'user/quest/comments/comment/thumbnail.jpg',
+    });
+    expect(getCommentPhotoPaths('user', 'quest', 'other')).not.toEqual(getCommentPhotoPaths('user', 'quest', 'comment'));
+  });
   it('builds immutable paths for all original quest variants', () => {
     expect(getPhotoVariantPaths('user-1', 'quest-1', 'quest')).toEqual({
       fullPath: 'user-1/quest-1/full.jpg',

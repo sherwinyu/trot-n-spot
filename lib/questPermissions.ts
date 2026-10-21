@@ -13,6 +13,11 @@ export function canReassignQuest(quest: Quest, userId: string | undefined): bool
   return canManageQuest(quest, userId) && quest.status === 'active';
 }
 
+export function canCompleteQuest(quest: Quest, userId: string | undefined): boolean {
+  return !!userId && quest.status === 'active' &&
+    (quest.mode === 'targeted' ? quest.assignee_id === userId : quest.creator_id !== userId);
+}
+
 // Storage paths a creator owns (their own folder) and may remove when the
 // quest goes away. The finder's completion photo lives elsewhere.
 export function ownedPhotoPaths(quest: Quest, userId: string): string[] {

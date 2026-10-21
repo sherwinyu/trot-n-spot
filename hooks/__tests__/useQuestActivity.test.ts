@@ -3,6 +3,8 @@ const mockInsertComment = jest.fn();
 const mockDeleteComment = jest.fn();
 const mockInsertReaction = jest.fn();
 const mockDeleteReaction = jest.fn();
+const mockSavePhotoComment = jest.fn();
+jest.mock('@/lib/questPhotoComments', () => ({ savePhotoComment: (...args: unknown[]) => mockSavePhotoComment(...args) }));
 
 jest.mock('@/lib/questActivity', () => ({
   ...jest.requireActual('@/lib/questActivity'),
@@ -21,7 +23,7 @@ jest.mock('expo-crypto', () => ({ randomUUID: () => 'new-comment' }));
 import { act, renderHook, waitFor } from '@testing-library/react-native';
 import { useQuestActivity } from '../useQuestActivity';
 
-const existing = { id: 'c1', quest_id: 'q1', pack_id: 'p1', author_id: 'other', body: 'hi', created_at: 't' };
+const existing = { id: 'c1', quest_id: 'q1', pack_id: 'p1', author_id: 'other', body: 'hi', created_at: 't', kind: 'reply' as const, photo_path: null, photo_full_path: null, photo_thumbnail_path: null };
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -56,6 +58,30 @@ it('does not post blank comments', async () => {
   await act(async () => { ok = await result.current.addComment('   '); });
   expect(ok).toBe(false);
   expect(mockInsertComment).not.toHaveBeenCalled();
+});
+
+it('posts a captionless photo without invoking completion', async () => {
+  const saved = { ...existing, id: 'photo-id', body: '', photo_path: 'me/q1/comments/photo-id/detail.jpg' };
+  mockSavePhotoComment.mockResolvedValue(saved);
+  const { result } = renderHook(() => useQuestActivity('q1'));
+  await waitFor(() => expect(result.current.loading).toBe(false));
+  let ok = false;
+  await act(async () => { ok = await result.current.addComment('', { id: 'photo-id', uri: 'file://photo.jpg' }); });
+  expect(ok).toBe(true);
+  expect(mockSavePhotoComment).toHaveBeenCalledWith({ commentId: 'photo-id', questId: 'q1', userId: 'me', photoUri: 'file://photo.jpg', body: '' });
+  expect(result.current.comments).toEqual([existing, saved]);
+  expect(mockInsertComment).not.toHaveBeenCalled();
+});
+
+it('retains photo drafts for retry rather than claiming an offline photo was sent', async () => {
+  mockSavePhotoComment.mockRejectedValue(new Error('Network request failed'));
+  const { result } = renderHook(() => useQuestActivity('q1'));
+  await waitFor(() => expect(result.current.loading).toBe(false));
+  let ok = true;
+  await act(async () => { ok = await result.current.addComment('A clue', { id: 'photo-id', uri: 'file://photo.jpg' }); });
+  expect(ok).toBe(false);
+  expect(result.current.error).toMatch(/offline/);
+  expect(result.current.comments).toEqual([existing]);
 });
 
 it('shows an offline message when posting fails for lack of network', async () => {

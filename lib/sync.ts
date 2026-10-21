@@ -2,6 +2,7 @@ import { supabase } from '@/lib/supabase';
 import { createPhotoVariants, uploadPhoto } from '@/lib/photos';
 import { getPhotoVariantPaths } from '@/lib/photoVariants';
 import { flushQueue, FlushHandlers } from '@/lib/offline';
+import { promotePhotoComment, savePhotoComment } from '@/lib/questPhotoComments';
 
 // The actual server writes for each queued mutation type. Shared by the
 // online paths in useCreateQuest/useCompleteQuest and the offline replay.
@@ -54,7 +55,15 @@ export async function syncCompleteQuest(payload: {
   journeyId: string | null;
   photoUri: string;
   completedAt?: string;
+  commentId?: string;
+  body?: string;
 }): Promise<void> {
+  if (payload.commentId) {
+    await savePhotoComment({ ...payload, commentId: payload.commentId });
+    await promotePhotoComment(payload.questId, payload.commentId, payload.journeyId);
+    return;
+  }
+  // Mutations queued before photo comments shipped still use the legacy RPC.
   const variants = await createPhotoVariants(payload.photoUri);
   const paths = getPhotoVariantPaths(payload.userId, payload.questId, 'completion');
   await Promise.all([

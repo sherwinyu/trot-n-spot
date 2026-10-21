@@ -3,6 +3,8 @@ import { useAuth } from '@/hooks/useAuth';
 import { useSync } from '@/providers/SyncProvider';
 import { syncCompleteQuest } from '@/lib/sync';
 import { enqueue, isNetworkError } from '@/lib/offline';
+import * as Crypto from 'expo-crypto';
+import { promotePhotoComment } from '@/lib/questPhotoComments';
 
 export function useCompleteQuest() {
   const { user } = useAuth();
@@ -14,10 +16,14 @@ export function useCompleteQuest() {
     questId,
     photoUri,
     journeyId,
+    commentId = Crypto.randomUUID(),
+    body,
   }: {
     questId: string;
     photoUri: string;
     journeyId?: string;
+    commentId?: string;
+    body?: string;
   }): Promise<{ queued: boolean } | null> => {
     if (!user) {
       setError('Must be signed in');
@@ -34,6 +40,8 @@ export function useCompleteQuest() {
         journeyId: journeyId ?? null,
         photoUri,
         completedAt: new Date().toISOString(),
+        commentId,
+        body,
       };
 
       try {
@@ -53,5 +61,20 @@ export function useCompleteQuest() {
     }
   }, [user, refreshPendingCount]);
 
-  return { completeQuest, loading, error };
+  const completeFromComment = useCallback(async (questId: string, commentId: string, journeyId?: string) => {
+    if (!user) return null;
+    setLoading(true);
+    setError(null);
+    try {
+      await promotePhotoComment(questId, commentId, journeyId);
+      return { queued: false };
+    } catch (err: any) {
+      setError(isNetworkError(err) ? "You're offline — reconnect to complete with this photo." : err.message ?? 'Could not complete quest');
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
+  return { completeQuest, completeFromComment, loading, error };
 }

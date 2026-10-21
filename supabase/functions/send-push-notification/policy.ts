@@ -151,7 +151,7 @@ export function planNotification(
     return {
       recipientIds: others.filter((id) => participants.has(id)),
       title: `${actor} commented`,
-      body: clip(comment.body.trim()),
+      body: clip(comment.body.trim() || 'Shared a photo'),
       data: { type: 'quest_commented', questId: comment.quest_id, packId: comment.pack_id },
     };
   }
