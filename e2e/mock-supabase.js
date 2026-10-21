@@ -329,6 +329,24 @@ const server = http.createServer(async (req, res) => {
     }
 
     // ----- storage -----
+    if (p === '/storage/v1/object/quest-photos' && req.method === 'DELETE') {
+      const user = authUser(req);
+      if (!user) return json(res, 401, { message: 'unauthorized' });
+      const body = JSON.parse((await readBody(req)).toString() || '{}');
+      if (!Array.isArray(body.prefixes) || body.prefixes.some((value) => typeof value !== 'string')) {
+        return json(res, 400, { message: 'Expected object path prefixes' });
+      }
+      const { rows } = await asUser(user, (client) =>
+        client.query(
+          `delete from storage.objects where bucket_id = 'quest-photos' and name = any($1::text[]) returning *`,
+          [body.prefixes]
+        )
+      );
+      for (const row of rows) {
+        fs.rmSync(path.join(storageDir, row.name.replace(/\//g, '__')), { force: true });
+      }
+      return json(res, 200, rows);
+    }
     const uploadMatch = p.match(/^\/storage\/v1\/object\/quest-photos\/(.+)$/);
     if (uploadMatch && req.method === 'POST') {
       const user = authUser(req);
