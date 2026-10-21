@@ -180,6 +180,13 @@ describe('planNotification for comments', () => {
     expect(planNotification(comment(NADIA, ''), { ...ctx, quest: quest() })?.body).toBe('Shared a photo');
   });
 
+  it('suppresses the photo-comment event when the same photo completes the quest', () => {
+    const completed = { ...quest(), status: 'completed', finder_id: NADIA, completion_comment_id: 'c1' };
+    expect(planNotification(comment(NADIA, ''), { ...ctx, quest: completed })).toBeNull();
+    expect(planNotification({ table: 'quests', type: 'UPDATE', record: completed, old_record: quest() }, ctx)?.data.type).toBe('quest_completed');
+    expect(planNotification(comment(NADIA), { ...ctx, quest: { ...completed, completion_comment_id: 'other' } })?.data.type).toBe('quest_commented');
+  });
+
   it('still notifies prior commenters when the quest lookup fails', () => {
     const plan = planNotification(comment(NADIA, `  ${'y'.repeat(100)}  `), {
       ...ctx,

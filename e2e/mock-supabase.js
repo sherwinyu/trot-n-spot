@@ -334,7 +334,20 @@ const server = http.createServer(async (req, res) => {
       const user = authUser(req);
       if (!user) return json(res, 401, { message: 'unauthorized' });
       const objectPath = decodeURIComponent(uploadMatch[1]);
-      const bytes = await readBody(req);
+      let bytes = await readBody(req);
+      // supabase-js wraps Blob uploads in FormData, including cacheControl.
+      // Store the file payload, not the multipart envelope.
+      const contentType = req.headers['content-type'] || '';
+      if (contentType.startsWith('multipart/form-data')) {
+        const form = await new Request('http://localhost/upload', {
+          method: 'POST',
+          headers: { 'content-type': contentType },
+          body: bytes,
+        }).formData();
+        const file = [...form.values()].find((value) => typeof value !== 'string');
+        if (!file) return json(res, 400, { message: 'Missing uploaded file' });
+        bytes = Buffer.from(await file.arrayBuffer());
+      }
 
       // Register the object as the caller so storage RLS runs for real.
       await asUser(user, (client) =>

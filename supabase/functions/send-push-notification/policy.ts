@@ -10,6 +10,7 @@ export type QuestRecord = {
   mode: 'targeted' | 'open';
   status: string;
   description: string | null;
+  completion_comment_id?: string | null;
 };
 
 export type PackMemberRecord = {
@@ -143,6 +144,7 @@ export function planNotification(
     // Everyone in the conversation: the quest's people plus prior
     // commenters, as long as they can still read the thread.
     const quest = ctx.quest;
+    if (quest?.completion_comment_id === comment.id) return null;
     const participants = new Set(
       [quest?.creator_id, quest?.assignee_id, quest?.finder_id, ...(ctx.commenterIds ?? [])].filter(
         (id): id is string => !!id

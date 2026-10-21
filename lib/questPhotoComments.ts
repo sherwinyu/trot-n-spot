@@ -12,7 +12,7 @@ export type PhotoCommentInput = {
   body?: string;
 };
 
-export async function savePhotoComment(input: PhotoCommentInput): Promise<QuestComment> {
+export async function savePhotoComment(input: PhotoCommentInput, completion?: { journeyId: string | null }): Promise<QuestComment> {
   const body = (input.body ?? '').trim();
   if (body.length > COMMENT_MAX_LENGTH) throw new Error('Captions must be 500 characters or less');
   const findExisting = async () => {
@@ -23,13 +23,27 @@ export async function savePhotoComment(input: PhotoCommentInput): Promise<QuestC
   };
   // A lost response must not post another comment or require the local photo again.
   const existing = await findExisting();
-  if (existing) return existing;
+  if (existing) {
+    if (completion) await promotePhotoComment(input.questId, input.commentId, completion.journeyId);
+    return existing;
+  }
 
   const paths = getCommentPhotoPaths(input.userId, input.questId, input.commentId);
   const variants = await createPhotoVariants(input.photoUri);
   await uploadPhoto(variants.fullUri, paths.fullPath);
   await uploadPhoto(variants.detailUri, paths.detailPath);
   await uploadPhoto(variants.thumbnailUri, paths.thumbnailPath);
+  if (completion) {
+    // Insert and promote in one transaction so push delivery sees the final state.
+    const { data, error } = await supabase.rpc('complete_quest_with_photo_comment', {
+      p_quest_id: input.questId, p_comment_id: input.commentId, p_body: body,
+      p_photo_path: paths.detailPath, p_photo_full_path: paths.fullPath,
+      p_photo_thumbnail_path: paths.thumbnailPath, p_journey_id: completion.journeyId,
+    });
+    if (error) throw error;
+    if (data?.error) throw new Error(data.error);
+    return data.comment as QuestComment;
+  }
   try {
     return await insertComment({
       id: input.commentId, quest_id: input.questId, author_id: input.userId, body,
