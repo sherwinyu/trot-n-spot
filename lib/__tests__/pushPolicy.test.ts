@@ -176,6 +176,10 @@ describe('planNotification for comments', () => {
     expect(describeEvent({ ...comment(NADIA), type: 'DELETE' } as WebhookPayload)).toBeNull();
   });
 
+  it('uses meaningful notification text for captionless photos', () => {
+    expect(planNotification(comment(NADIA, ''), { ...ctx, quest: quest() })?.body).toBe('Shared a photo');
+  });
+
   it('still notifies prior commenters when the quest lookup fails', () => {
     const plan = planNotification(comment(NADIA, `  ${'y'.repeat(100)}  `), {
       ...ctx,

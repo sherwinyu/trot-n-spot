@@ -675,7 +675,7 @@ select test_login('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
 do $$
 declare affected int;
 begin
-  assert (select count(*) from quest_comments where quest_id = 'c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1') = 1, 'packmate sees the comment';
+  assert (select count(*) from quest_comments where quest_id = 'c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1' and kind = 'reply') = 1, 'packmate sees the comment';
   assert (select count(*) from quest_reactions where quest_id = 'c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1') = 1, 'packmate sees the reaction';
   delete from quest_comments where id = 'c0000000-0000-4000-8000-000000000001';
   get diagnostics affected = row_count;
@@ -694,7 +694,7 @@ end $$;
 select test_login('cccccccc-cccc-cccc-cccc-cccccccccccc');
 do $$
 begin
-  assert (select count(*) from quest_comments) = 0, 'outsider sees no comments';
+  assert (select count(*) from quest_comments where quest_id = 'c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1') = 0, 'outsider sees no comments';
   assert (select count(*) from quest_reactions) = 0, 'outsider sees no reactions';
   begin
     insert into quest_comments (quest_id, author_id, body)
@@ -746,4 +746,5 @@ begin
 end $$;
 
 reset role;
+\ir photo-comments.sql
 select 'ALL DB TESTS PASSED' as result;

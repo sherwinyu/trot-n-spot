@@ -46,6 +46,9 @@ export async function insertComment(comment: {
   quest_id: string;
   author_id: string;
   body: string;
+  photo_path?: string;
+  photo_full_path?: string;
+  photo_thumbnail_path?: string;
 }): Promise<QuestComment> {
   const { data, error } = await supabase.from('quest_comments').insert(comment).select('*').single();
   if (error) throw error;
@@ -53,8 +56,9 @@ export async function insertComment(comment: {
 }
 
 export async function deleteComment(id: string): Promise<void> {
-  const { error } = await supabase.from('quest_comments').delete().eq('id', id);
+  const { data, error } = await supabase.from('quest_comments').delete().eq('id', id).select('id').maybeSingle();
   if (error) throw error;
+  if (!data) throw new Error('This comment cannot be deleted. It may have completed the quest.');
 }
 
 const UNIQUE_VIOLATION = '23505';

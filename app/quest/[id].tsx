@@ -1,4 +1,4 @@
-import { StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
+import { StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView, KeyboardAvoidingView, Platform, TextInput } from 'react-native';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -21,11 +21,15 @@ import {
 } from '@/lib/questFeed';
 import { usePackLookups } from '@/providers/AuthProvider';
 import { capturePhoto } from '@/lib/photos';
-import { Quest } from '@/types/database';
+import { Quest, QuestComment } from '@/types/database';
 import { QuestPhoto } from '@/components/QuestPhoto';
 import { QuestManage } from '@/components/QuestManage';
 import { QuestActivity } from '@/components/QuestActivity';
-import { canManageQuest } from '@/lib/questPermissions';
+import { canCompleteQuest, canManageQuest } from '@/lib/questPermissions';
+import * as Crypto from 'expo-crypto';
+import { COMMENT_MAX_LENGTH } from '@/lib/questActivity';
+import { useColorScheme } from '@/components/useColorScheme';
+import Colors from '@/constants/Colors';
 
 // Keep the feed's last-good copy in step with a creator edit/delete so the
 // home screen doesn't flash stale data before its focus refresh lands.
@@ -42,7 +46,8 @@ export default function QuestDetailScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const { memberNames } = usePackLookups();
-  const { completeQuest, loading: completing, error } = useCompleteQuest();
+  const { completeQuest, completeFromComment, loading: completing, error } = useCompleteQuest();
+  const colors = Colors[useColorScheme() ?? 'light'];
   const { activeJourney } = useJourney();
 
   const [completion, setCompletion] = useState<{ queued: boolean } | null>(null);
@@ -51,6 +56,8 @@ export default function QuestDetailScreen() {
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [capturedUri, setCapturedUri] = useState<string | null>(null);
+  const capturedCommentId = useRef<string>('');
+  const [caption, setCaption] = useState('');
 
   useEffect(() => {
     async function fetchQuest() {
@@ -100,19 +107,14 @@ export default function QuestDetailScreen() {
     fetchQuest();
   }, [id, user]);
 
-  const isActive = quest?.status === 'active';
-  // Targeted quests belong to their assignee; open quests are up for
-  // grabs by anyone in the pack except the person who spotted them.
-  const canAttempt =
-    !!quest &&
-    !!user &&
-    (quest.mode === 'targeted'
-      ? quest.assignee_id === user.id
-      : quest.creator_id !== user.id);
+  const canAttempt = !!quest && canCompleteQuest(quest, user?.id);
 
   const handleFoundIt = async () => {
     const uri = await capturePhoto();
-    if (uri) setCapturedUri(uri);
+    if (uri) {
+      capturedCommentId.current = Crypto.randomUUID();
+      setCapturedUri(uri);
+    }
   };
 
   const handleConfirmCompletion = async () => {
@@ -124,7 +126,20 @@ export default function QuestDetailScreen() {
         questId: quest.id,
         photoUri: capturedUri,
         journeyId: activeJourney?.id,
+        commentId: capturedCommentId.current,
+        body: caption,
       });
+      if (result) setCompletion(result);
+    } finally {
+      submitting.current = false;
+    }
+  };
+
+  const handlePromote = async (comment: QuestComment) => {
+    if (!quest || submitting.current || completion) return;
+    submitting.current = true;
+    try {
+      const result = await completeFromComment(quest.id, comment.id, activeJourney?.id);
       if (result) setCompletion(result);
     } finally {
       submitting.current = false;
@@ -224,7 +239,7 @@ export default function QuestDetailScreen() {
           )}
 
           {/* Completion flow for whoever may attempt this quest */}
-          {canAttempt && isActive && !capturedUri && (
+          {canAttempt && !capturedUri && (
             <TouchableOpacity style={styles.foundButton} onPress={handleFoundIt}>
               <Text style={styles.foundButtonText}>I Found It!</Text>
             </TouchableOpacity>
@@ -248,6 +263,16 @@ export default function QuestDetailScreen() {
                 />
               </View>
 
+              <TextInput
+                value={caption}
+                onChangeText={setCaption}
+                placeholder="Add a caption (optional)…"
+                accessibilityLabel="Photo caption"
+                maxLength={COMMENT_MAX_LENGTH}
+                editable={!completing}
+                style={[styles.caption, { color: colors.inputText, backgroundColor: colors.inputBackground, borderColor: colors.border }]}
+                placeholderTextColor={colors.placeholder}
+              />
               <View style={styles.confirmActions}>
                 <TouchableOpacity
                   style={styles.retakeButton}
@@ -268,12 +293,14 @@ export default function QuestDetailScreen() {
                   )}
                 </TouchableOpacity>
               </View>
-
-              {error && <Text style={styles.error}>{error}</Text>}
+              <TouchableOpacity onPress={() => { setCapturedUri(null); setCaption(''); }} disabled={completing} style={styles.cancelButton} accessibilityRole="button">
+                <Text>Cancel</Text>
+              </TouchableOpacity>
             </>
           )}
 
-          {!capturedUri && <QuestActivity quest={quest} />}
+          {error && <Text style={styles.error}>{error}</Text>}
+          {!capturedUri && <QuestActivity quest={quest} onComplete={handlePromote} completing={completing} />}
         </ScrollView>
       </KeyboardAvoidingView>
     </QuestPage>
@@ -346,6 +373,8 @@ const styles = StyleSheet.create({
     gap: 12,
     backgroundColor: 'transparent',
   },
+  caption: { borderWidth: 1, borderRadius: 8, padding: 12, marginBottom: 12, fontSize: 15 },
+  cancelButton: { padding: 14, alignItems: 'center' },
   retakeButton: {
     flex: 1,
     paddingVertical: 14,

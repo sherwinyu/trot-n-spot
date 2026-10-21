@@ -33,6 +33,8 @@ export type PendingMutation =
         journeyId: string | null;
         photoUri: string;
         completedAt: string;
+        commentId?: string; // absent in mutations queued by older clients
+        body?: string;
       };
     };
 

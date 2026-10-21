@@ -1,4 +1,4 @@
-import { canManageQuest, canReassignQuest, ownedPhotoPaths } from '@/lib/questPermissions';
+import { canCompleteQuest, canManageQuest, canReassignQuest, ownedPhotoPaths } from '@/lib/questPermissions';
 import { Quest } from '@/types/database';
 
 const CREATOR = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
@@ -42,6 +42,16 @@ describe('canManageQuest', () => {
   it('still allows the creator on completed quests (delete)', () => {
     expect(canManageQuest(makeQuest({ status: 'completed' }), CREATOR)).toBe(true);
   });
+});
+
+it('only offers promotion to eligible finders of active quests', () => {
+  expect(canCompleteQuest(makeQuest(), ASSIGNEE)).toBe(true);
+  expect(canCompleteQuest(makeQuest(), CREATOR)).toBe(false);
+  expect(canCompleteQuest(makeQuest(), 'packmate')).toBe(false);
+  expect(canCompleteQuest(makeQuest({ mode: 'open', assignee_id: null }), 'packmate')).toBe(true);
+  expect(canCompleteQuest(makeQuest({ mode: 'open', assignee_id: null }), CREATOR)).toBe(false);
+  expect(canCompleteQuest(makeQuest({ status: 'completed' }), ASSIGNEE)).toBe(false);
+  expect(canCompleteQuest(makeQuest(), undefined)).toBe(false);
 });
 
 describe('canReassignQuest', () => {

@@ -15,6 +15,7 @@ import {
 } from '@/lib/questActivity';
 import { useNotifications } from '@/providers/NotificationProvider';
 import { QuestComment, QuestReaction, ReactionKind } from '@/types/database';
+import { savePhotoComment } from '@/lib/questPhotoComments';
 
 // Comments and reactions for one quest. Online-only like quest edits: a
 // comment is a message to packmates, so it should only show as sent once
@@ -71,14 +72,16 @@ export function useQuestActivity(questId: string | undefined) {
   }, [refresh, receivedCount]);
 
   const addComment = useCallback(
-    async (body: string): Promise<boolean> => {
+    async (body: string, photo?: { id: string; uri: string }): Promise<boolean> => {
       const text = normalizeCommentBody(body);
-      if (!questId || !user || !text) return false;
+      if (!questId || !user || (!text && !photo)) return false;
       setPosting(true);
       setError(null);
       writes.current++;
       try {
-        const saved = await insertComment({ id: Crypto.randomUUID(), quest_id: questId, author_id: user.id, body: text });
+        const saved = photo
+          ? await savePhotoComment({ commentId: photo.id, questId, userId: user.id, photoUri: photo.uri, body })
+          : await insertComment({ id: Crypto.randomUUID(), quest_id: questId, author_id: user.id, body: text! });
         setComments((prev) => (prev.some((c) => c.id === saved.id) ? prev : [...prev, saved]));
         return true;
       } catch (err) {
@@ -94,7 +97,7 @@ export function useQuestActivity(questId: string | undefined) {
 
   const removeComment = useCallback(
     async (comment: QuestComment): Promise<boolean> => {
-      if (!user || comment.author_id !== user.id) return false;
+      if (!user || comment.author_id !== user.id || comment.kind === 'original') return false;
       setError(null);
       writes.current++;
       try {
