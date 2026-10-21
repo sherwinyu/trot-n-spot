@@ -13,10 +13,10 @@ import { syncCompleteQuest } from '../sync';
 const payload = { questId: 'q1', userId: 'u1', photoUri: 'file://photo.jpg', journeyId: 'j1' };
 beforeEach(() => { jest.resetAllMocks(); mockRpc.mockResolvedValue({ data: { success: true } }); });
 
-it('saves the queued photo comment before promoting, retaining its client id and caption', async () => {
+it('atomically saves and promotes a queued photo, retaining its client id and caption', async () => {
   await syncCompleteQuest({ ...payload, commentId: 'c1', body: 'Found it' });
-  expect(mockSave).toHaveBeenCalledWith({ ...payload, commentId: 'c1', body: 'Found it' });
-  expect(mockPromote).toHaveBeenCalledWith('q1', 'c1', 'j1');
+  expect(mockSave).toHaveBeenCalledWith({ ...payload, commentId: 'c1', body: 'Found it' }, { journeyId: 'j1' });
+  expect(mockPromote).not.toHaveBeenCalled();
   expect(mockRpc).not.toHaveBeenCalled();
 });
 

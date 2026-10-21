@@ -56,9 +56,15 @@ export async function insertComment(comment: {
 }
 
 export async function deleteComment(id: string): Promise<void> {
-  const { data, error } = await supabase.from('quest_comments').delete().eq('id', id).select('id').maybeSingle();
+  const { data, error } = await supabase.from('quest_comments').delete().eq('id', id)
+    .select('id, photo_path, photo_full_path, photo_thumbnail_path').maybeSingle();
   if (error) throw error;
   if (!data) throw new Error('This comment cannot be deleted. It may have completed the quest.');
+  const paths = [data.photo_path, data.photo_full_path, data.photo_thumbnail_path].filter((path): path is string => !!path);
+  if (paths.length) {
+    // The row is already gone; cleanup failure must not restore a stale comment.
+    try { await supabase.storage.from('quest-photos').remove(paths); } catch { /* Best effort, like quest deletion. */ }
+  }
 }
 
 const UNIQUE_VIOLATION = '23505';

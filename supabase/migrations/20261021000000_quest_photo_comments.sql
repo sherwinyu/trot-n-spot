@@ -126,9 +126,9 @@ begin
 end;
 $$;
 
--- Old clients still submit paths. Insert a comment and promote it in one transaction.
-create or replace function complete_quest(
-  p_quest_id uuid, p_photo_path text, p_journey_id uuid default null,
+-- Captured completions insert and promote together, including legacy path-only clients.
+create function complete_quest_with_photo_comment(
+  p_quest_id uuid, p_photo_path text, p_comment_id uuid, p_body text default '', p_journey_id uuid default null,
   p_photo_full_path text default null, p_photo_thumbnail_path text default null
 )
 returns json language plpgsql security definer set search_path = public as $$
@@ -141,6 +141,9 @@ begin
     return json_build_object('error', 'Only pack members can complete this quest');
   end if;
   if q.status = 'completed' and q.finder_id = auth.uid() then
+    if q.completion_comment_id = p_comment_id then
+      return json_build_object('success', true, 'comment', (select to_jsonb(c) from quest_comments c where id = p_comment_id));
+    end if;
     return json_build_object('error', 'Quest is already completed');
   end if;
   -- Preserve legacy error ordering; promotion rechecks authorization below.
@@ -161,17 +164,27 @@ begin
     return json_build_object('error', 'Invalid completion photo path');
   end if;
   begin
-    insert into quest_comments (quest_id, author_id, body, photo_path, photo_full_path, photo_thumbnail_path)
-    values (q.id, auth.uid(), '', p_photo_path, p_photo_full_path, p_photo_thumbnail_path)
-    returning id into comment_id;
+    comment_id := coalesce(p_comment_id, gen_random_uuid());
+    insert into quest_comments (id, quest_id, author_id, body, photo_path, photo_full_path, photo_thumbnail_path)
+    values (comment_id, q.id, auth.uid(), p_body, p_photo_path, p_photo_full_path, p_photo_thumbnail_path)
+    on conflict (id) do nothing;
     result := complete_quest_from_comment(q.id, comment_id, p_journey_id);
     if result->>'error' is not null then raise exception '%', result->>'error'; end if;
-    return result;
+    return json_build_object('success', true, 'comment', (select to_jsonb(c) from quest_comments c where id = comment_id));
   exception when raise_exception then
     return json_build_object('error', sqlerrm);
   end;
 end;
 $$;
+create or replace function complete_quest(
+  p_quest_id uuid, p_photo_path text, p_journey_id uuid default null,
+  p_photo_full_path text default null, p_photo_thumbnail_path text default null
+)
+returns json language sql security definer set search_path = public as $$
+  select complete_quest_with_photo_comment(p_quest_id, p_photo_path, null, '', p_journey_id, p_photo_full_path, p_photo_thumbnail_path);
+$$;
+revoke all on function complete_quest_with_photo_comment(uuid, text, uuid, text, uuid, text, text) from public;
+grant execute on function complete_quest_with_photo_comment(uuid, text, uuid, text, uuid, text, text) to authenticated;
 revoke all on function complete_quest_from_comment(uuid, uuid, uuid) from public;
 grant execute on function complete_quest_from_comment(uuid, uuid, uuid) to authenticated;
 

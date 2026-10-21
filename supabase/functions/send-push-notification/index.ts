@@ -68,7 +68,7 @@ Deno.serve(async (req) => {
       commentQuestId
         ? supabase
             .from('quests')
-            .select('id, pack_id, creator_id, assignee_id, finder_id, mode, status, description')
+            .select('id, pack_id, creator_id, assignee_id, finder_id, mode, status, description, completion_comment_id')
             .eq('id', commentQuestId)
             .maybeSingle()
         : Promise.resolve({ data: null }),

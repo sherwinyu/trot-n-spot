@@ -4,10 +4,37 @@ import {
   normalizeCommentBody,
   summarizeReactions,
   toggleReaction,
+  deleteComment,
 } from '@/lib/questActivity';
 import { QuestComment, QuestReaction } from '@/types/database';
 
-jest.mock('@/lib/supabase', () => ({ supabase: {} }));
+const mockDeleted = jest.fn();
+const mockRemove = jest.fn();
+jest.mock('@/lib/supabase', () => ({ supabase: {
+  from: () => ({ delete: () => ({ eq: () => ({ select: () => ({ maybeSingle: mockDeleted }) }) }) }),
+  storage: { from: () => ({ remove: mockRemove }) },
+} }));
+
+describe('deleteComment photo cleanup', () => {
+  beforeEach(() => { mockDeleted.mockReset(); mockRemove.mockReset(); });
+  it('removes every photo variant only after deleting the comment row', async () => {
+    mockDeleted.mockResolvedValue({ data: { id: 'c1', photo_path: 'detail', photo_full_path: 'full', photo_thumbnail_path: 'thumb' } });
+    await deleteComment('c1');
+    expect(mockRemove).toHaveBeenCalledWith(['detail', 'full', 'thumb']);
+  });
+  it('does not remove storage if deletion is denied or the comment is text-only', async () => {
+    mockDeleted.mockResolvedValueOnce({ data: null }).mockResolvedValueOnce({ data: { id: 'c1' } });
+    await expect(deleteComment('c1')).rejects.toThrow();
+    await deleteComment('c1');
+    expect(mockRemove).not.toHaveBeenCalled();
+  });
+  it('treats storage cleanup as best effort after a successful row deletion', async () => {
+    mockDeleted.mockResolvedValue({ data: { id: 'c1', photo_path: 'detail' } });
+    mockRemove.mockRejectedValue(new Error('Network request failed'));
+    await expect(deleteComment('c1')).resolves.toBeUndefined();
+    expect(mockRemove).toHaveBeenCalled();
+  });
+});
 
 const SHERWIN = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const NADIA = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';

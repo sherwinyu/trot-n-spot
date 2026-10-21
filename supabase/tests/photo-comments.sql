@@ -11,6 +11,7 @@ declare
   photo uuid := gen_random_uuid();
   text_comment uuid := gen_random_uuid();
   creator_photo uuid := gen_random_uuid();
+  captured_photo uuid := gen_random_uuid();
   original uuid;
   path text;
   result json;
@@ -102,6 +103,24 @@ begin
   delete from quest_comments where photo_path = path || '/after.jpg';
   get diagnostics affected = row_count;
   assert affected = 1, 'unpromoted photo can be deleted';
+
+  path := finder::text || '/' || other_q::text || '/comments/' || captured_photo::text;
+  result := complete_quest_with_photo_comment(other_q, path || '/detail.jpg', captured_photo, 'My find', gen_random_uuid());
+  assert result->>'error' = 'Invalid journey', 'atomic capture rejects invalid journey';
+  assert not exists (select 1 from quest_comments where id = captured_photo), 'failed capture promotion rolls back its reply';
+  result := complete_quest_with_photo_comment(other_q, path || '/detail.jpg', creator_photo);
+  assert result->>'error' is not null, 'atomic capture rejects an id belonging to another author/quest';
+  result := complete_quest_with_photo_comment(other_q, path || '/detail.jpg', captured_photo, 'My find', null, path || '/full.jpg', path || '/thumbnail.jpg');
+  assert (result->>'success')::boolean, 'capture inserts and promotes atomically';
+  assert result->'comment'->>'body' = 'My find', 'capture preserves its caption';
+  assert (select completion_comment_id from quests where id = other_q) = captured_photo, 'capture links client-generated comment id';
+  result := complete_quest_with_photo_comment(other_q, path || '/detail.jpg', captured_photo, 'Retry');
+  assert (result->>'success')::boolean, 'atomic capture retry is idempotent';
+  assert (select count(*) from quest_comments where quest_id = other_q and kind = 'reply') = 1, 'retry does not insert another reply';
+  assert result->'comment'->>'body' = 'My find', 'retry retains original caption';
+  assert not has_function_privilege('anon', 'complete_quest_with_photo_comment(uuid,text,uuid,text,uuid,text,text)', 'execute'), 'anon cannot complete from capture';
+
+  path := finder::text || '/' || q::text || '/comments/' || photo::text;
   perform test_login(creator);
   delete from quests where id in (q, other_q);
   assert not exists (select 1 from quest_comments where quest_id = q), 'completed quest and its linked comments cascade together';

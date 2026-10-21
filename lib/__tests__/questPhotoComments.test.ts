@@ -74,3 +74,20 @@ it('surfaces lost-race errors rather than claiming success', async () => {
   mockRpc.mockResolvedValue({ data: { error: 'Already found by Nadia' }, error: null });
   await expect(promotePhotoComment('q1', 'c1')).rejects.toThrow('Already found by Nadia');
 });
+
+it('saves immediate completions atomically rather than inserting a separate notifying reply', async () => {
+  mockRpc.mockResolvedValue({ data: { success: true, comment: saved } });
+  expect(await savePhotoComment(input, { journeyId: 'j1' })).toEqual(saved);
+  expect(mockRpc).toHaveBeenCalledWith('complete_quest_with_photo_comment', {
+    p_quest_id: 'q1', p_comment_id: 'c1', p_body: 'A clue', p_journey_id: 'j1',
+    p_photo_path: 'u1/q1/comments/c1/detail.jpg', p_photo_full_path: 'u1/q1/comments/c1/full.jpg', p_photo_thumbnail_path: 'u1/q1/comments/c1/thumbnail.jpg',
+  });
+  expect(mockInsert).not.toHaveBeenCalled();
+});
+
+it('retries immediate completions using the existing photo without uploading again', async () => {
+  mockMaybeSingle.mockResolvedValue({ data: saved });
+  await savePhotoComment(input, { journeyId: null });
+  expect(mockRpc).toHaveBeenCalledWith('complete_quest_from_comment', { p_quest_id: 'q1', p_comment_id: 'c1', p_journey_id: null });
+  expect(mockUpload).not.toHaveBeenCalled();
+});
