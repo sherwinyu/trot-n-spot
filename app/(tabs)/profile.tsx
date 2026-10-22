@@ -11,6 +11,8 @@ import { confirm, notify } from '@/lib/notify';
 import { formatTimer } from '@/lib/format';
 import { supabase } from '@/lib/supabase';
 import { useNotifications } from '@/providers/NotificationProvider';
+import { WalkReminderSettings } from '@/components/WalkReminderSettings';
+import { WalkStartOffset } from '@/lib/journeys';
 
 export default function ProfileScreen() {
   const { profile, packs, signOut, refreshProfile } = useAuth();
@@ -33,21 +35,26 @@ export default function ProfileScreen() {
       setPushBusy(false);
     }
   };
-  const { activeJourney, startJourney, endJourney, journeyDuration, loading: journeyLoading } = useJourney();
+  const { activeJourney, startJourney, endJourney, journeyDuration, loading: journeyLoading, isBusy, error: journeyError, refreshJourney } = useJourney();
   const [walkBusy, setWalkBusy] = useState(false);
-  const changeWalk = async () => {
-    if (walkBusy) return;
+  const changeWalk = async (minutesAgo: WalkStartOffset = 0) => {
+    if (walkBusy || isBusy) return;
     setWalkBusy(true);
     try {
       if (activeJourney) await endJourney();
-      else await startJourney();
+      else await startJourney(minutesAgo);
+    } catch (err: any) {
+      notify('Could not save your walk', err.message ?? 'Check your connection and try again.');
     } finally { setWalkBusy(false); }
   };
   const router = useRouter();
   const c = Colors[useColorScheme() ?? 'light'];
 
   const handleSignOut = () => {
-    confirm('Sign Out', 'Are you sure?', signOut, 'Sign Out');
+    confirm('Sign Out', 'Are you sure?', async () => {
+      try { await signOut(); }
+      catch { notify('Could not sign out', 'Please try again so this device’s reminders can be removed.'); }
+    }, 'Sign Out');
   };
 
   return (
@@ -69,20 +76,39 @@ export default function ProfileScreen() {
 
       <View style={[styles.journeySection, { backgroundColor: c.card }]}>
         <Text style={styles.sectionTitle}>Walk</Text>
+        {journeyError && (
+          <TouchableOpacity accessibilityRole="button" onPress={refreshJourney}>
+            <Text style={styles.errorText}>{journeyError} Tap to retry.</Text>
+          </TouchableOpacity>
+        )}
         <WalkDudley journeyId={activeJourney?.id ?? null} loading={journeyLoading} />
         {activeJourney ? (
           <>
             <Text style={styles.timer}>{formatTimer(journeyDuration)}</Text>
-            <TouchableOpacity style={styles.endButton} accessibilityRole="button" disabled={walkBusy || journeyLoading} onPress={changeWalk}>
+            <TouchableOpacity style={styles.endButton} accessibilityRole="button" disabled={walkBusy || isBusy || journeyLoading} onPress={() => changeWalk()}>
               <Text style={styles.endButtonText}>{walkBusy ? 'Ending…' : 'End Walk'}</Text>
             </TouchableOpacity>
           </>
         ) : (
-          <TouchableOpacity style={styles.startButton} accessibilityRole="button" disabled={walkBusy || journeyLoading} onPress={changeWalk}>
-            <Text style={styles.startButtonText}>{walkBusy ? 'Starting…' : 'Start Walk'}</Text>
-          </TouchableOpacity>
+          <>
+            <TouchableOpacity style={styles.startButton} accessibilityRole="button" disabled={walkBusy || isBusy || journeyLoading} onPress={() => changeWalk()}>
+              <Text style={styles.startButtonText}>{walkBusy || isBusy ? 'Starting…' : 'Start Walk'}</Text>
+            </TouchableOpacity>
+            <Text style={styles.lateLabel}>Already walking? I started…</Text>
+            <View style={styles.lateRow}>
+              {([10, 20, 30] as const).map((minutes) => (
+                <TouchableOpacity key={minutes} accessibilityRole="button" accessibilityLabel={`Start walk ${minutes} minutes ago`}
+                  disabled={walkBusy || isBusy || journeyLoading} style={[styles.lateButton, { borderColor: c.border }]}
+                  onPress={() => changeWalk(minutes)}>
+                  <Text>{minutes} min ago</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </>
         )}
       </View>
+
+      <WalkReminderSettings />
 
       {Platform.OS !== 'web' && (
         <View style={[styles.journeySection, { backgroundColor: c.card }]}>
@@ -118,6 +144,10 @@ export default function ProfileScreen() {
 }
 
 const styles = StyleSheet.create({
+  errorText: { color: '#EA4335', textAlign: 'center', marginBottom: 12 },
+  lateLabel: { fontSize: 14, color: '#777', marginTop: 20, marginBottom: 10 },
+  lateRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, backgroundColor: 'transparent' },
+  lateButton: { borderWidth: 1, borderRadius: 8, padding: 10 },
   container: {
     flexGrow: 1,
     padding: 24,

@@ -14,15 +14,17 @@ import {
   softPromptCount,
   syncPushToken,
 } from '@/lib/notifications';
-import { confirm } from '@/lib/notify';
+import { confirm, notify } from '@/lib/notify';
+import { handleWalkReminderAction, isWalkReminder } from '@/lib/walkReminders';
+import { useJourney } from '@/hooks/useJourney';
 import { fetchActivity, markAllActivityRead, unseenCount } from '@/lib/activity';
 import { ActivityNotification } from '@/types/database';
 
 if (Platform.OS !== 'web') {
   Notifications.setNotificationHandler({
-    handleNotification: async () => {
+    handleNotification: async (notification) => {
       // The feed refetches on receipt, so a banner on top of it is noise.
-      const quiet = isFeedFocused();
+      const quiet = isFeedFocused() && !isWalkReminder(notification.request.content.data);
       return {
         shouldShowAlert: !quiet,
         shouldPlaySound: !quiet,
@@ -78,6 +80,9 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   const activityRef = useRef(activity);
   const handledColdStart = useRef(false);
   const userId = user?.id ?? null;
+  const { startJourney, loading: journeyLoading } = useJourney();
+  const current = useRef({ userId, startJourney });
+  current.current = { userId, startJourney };
 
   const refreshActivity = useCallback(async () => {
     if (!userId) return;
@@ -133,9 +138,30 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   }, [userId, permission]);
 
   useEffect(() => {
-    if (!userId || Platform.OS === 'web') return;
+    if (!userId || journeyLoading || Platform.OS === 'web') return;
 
-    const navigate = (response: Notifications.NotificationResponse) => {
+    const navigate = async (response: Notifications.NotificationResponse) => {
+      if (isWalkReminder(response.notification.request.content.data)) {
+        try {
+          const result = await handleWalkReminderAction(userId, response);
+          if (!result || current.current.userId !== userId) return;
+          if (result === 'start') await current.current.startJourney();
+          if (current.current.userId !== userId) return;
+          if (result === 'start' || result === 'open' || result === 'expired') {
+            router.push('/(tabs)/profile');
+          }
+          if (result === 'snoozed') notify('Reminder snoozed', 'We’ll remind you in 30 minutes.');
+          if (result === 'skipped') notify('Skipped today', 'Walk reminders will resume tomorrow.');
+          if (result === 'expired') notify('Reminder expired', 'You can still start or backdate your walk here.');
+        } catch (e) {
+          if (current.current.userId !== userId) return;
+          router.push('/(tabs)/profile');
+          notify('Could not complete that action', e instanceof Error ? e.message : 'Check your connection and try again.');
+        } finally {
+          await Notifications.clearLastNotificationResponseAsync().catch((e) => console.warn('clear walk response failed', e));
+        }
+        return;
+      }
       const route = routeForNotification(response);
       if (route) router.push(route as never);
     };
@@ -159,7 +185,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       received.remove();
       tapped.remove();
     };
-  }, [userId, router]);
+  }, [userId, journeyLoading, router]);
 
   const requestPermission = useCallback(async () => {
     const status = await requestPushPermission();

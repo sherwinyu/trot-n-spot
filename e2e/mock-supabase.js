@@ -135,6 +135,9 @@ function buildWhere(params, args) {
       if (op === 'eq') {
         args.push(operand);
         clauses.push(`${quoteIdent(key)} = $${args.length}`);
+      } else if (op === 'gt' || op === 'gte') {
+        args.push(operand);
+        clauses.push(`${quoteIdent(key)} ${op === 'gt' ? '>' : '>='} $${args.length}`);
       } else if (op === 'in') {
         // in.(a,b,c)
         const list = operand
