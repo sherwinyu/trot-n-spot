@@ -80,6 +80,15 @@ it('skips both windows today but retains tomorrow and later reminders', async ()
   expect([...mockPending.values()].some((r) => r.content.data.day === '2026-10-22')).toBe(false);
 });
 
+it('honors Skip today from a morning notification after the morning window ends', async () => {
+  jest.setSystemTime(new Date(2026, 9, 22, 12));
+  await updateWalkReminders('me', enabled);
+  expect(await handleWalkReminderAction('me', response(WALK_ACTIONS.skip))).toBe('skipped');
+  expect([...mockPending.values()].filter((r) => r.content.data.day === '2026-10-22')).toHaveLength(0);
+  expect([...mockPending.values()].filter((r) => r.content.data.day === '2026-10-23')).toHaveLength(2);
+  expect(await handleWalkReminderAction('me', response(WALK_ACTIONS.skip, 'yesterday', { day: '2026-10-21' }))).toBe('expired');
+});
+
 it('never snoozes past the window, and stale notifications cannot start a walk', async () => {
   jest.setSystemTime(new Date(2026, 9, 22, 9, 45));
   await updateWalkReminders('me', enabled);
