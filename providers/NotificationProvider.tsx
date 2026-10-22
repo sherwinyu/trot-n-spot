@@ -190,11 +190,8 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   const requestPermission = useCallback(async () => {
     const status = await requestPushPermission();
     setPermission(status);
-    if (status === 'granted' && userId) {
-      await syncPushToken().catch((e) => console.warn('push token sync failed', e));
-    }
     return status;
-  }, [userId]);
+  }, []);
 
   const maybeAskForPush = useCallback(async () => {
     if (Platform.OS === 'web' || permission !== 'undetermined') return;
