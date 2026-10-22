@@ -12,6 +12,7 @@ import { useColorScheme } from '@/components/useColorScheme';
 import { AuthProvider, useAuth } from '@/providers/AuthProvider';
 import { SyncProvider } from '@/providers/SyncProvider';
 import { NotificationProvider } from '@/providers/NotificationProvider';
+import { JourneyProvider } from '@/providers/JourneyProvider';
 
 export { ErrorBoundary } from 'expo-router';
 
@@ -77,9 +78,11 @@ export default function RootLayout() {
       <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
         <AuthProvider>
           <SyncProvider>
-            <NotificationProvider>
-              <AuthGate />
-            </NotificationProvider>
+            <JourneyProvider>
+              <NotificationProvider>
+                <AuthGate />
+              </NotificationProvider>
+            </JourneyProvider>
           </SyncProvider>
         </AuthProvider>
       </ThemeProvider>

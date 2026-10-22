@@ -56,6 +56,48 @@ to ~80 chars.
   read-only for clients (select-only RLS; the edge function writes with
   the service role). Events before this shipped have no rows.
 
+## Local walk reminders (SHE-220)
+
+These are opt-in, on-device notifications, independent of pack activity pings.
+Profile → Walk reminders defaults to 07:00 and 16:00 local time; editable within
+07:00–10:00 and 16:00–19:00 (exclusive end). No location or motion permission,
+new native dependency, server job, or database migration is needed.
+
+- A normal notification tap opens Profile. The explicit **Start Walk** action
+  starts a journey. **Remind in 30 min** stays within that window; **Skip today**
+  skips both remaining windows today. All actions open the app, including on a
+  cold start, rather than requiring background JavaScript execution.
+- Manual Start/End and notification starts share `JourneyProvider`. A walk can
+  also start 10/20/30 minutes ago, unless that overlaps a previous walk. Saving
+  walks requires connectivity; failures are shown, not silently queued.
+- Scheduling uses 28 days of one-shot requests (at most 56, below iOS's 64
+  pending-request limit). This lets us cancel today's reminders without losing
+  tomorrow's. Opening/foregrounding the app renews the horizon and checks recent
+  walks. If the app is unused for four weeks, reminders stop until it is opened.
+- Active walks cancel pending reminders; ending the walk refills the schedule,
+  excluding today's windows in which a walk was logged. Other-device walks are
+  noticed on foreground, not while this device is asleep.
+- Settings are account-scoped in local storage and do not sync between phones.
+  Logout/account switch removes the previous account's pending and displayed
+  reminders. Permission revocation is reconciled on foreground.
+- Dates follow the device's local calendar, including DST. Reopen after changing
+  time zones to rebuild the schedule. Android battery restrictions and iOS Focus
+  can delay/silence delivery; exact-alarm permission is deliberately not added.
+
+### Device checks
+
+1. In a morning/evening window, set the relevant reminder a few minutes ahead,
+   enable reminders, and background the app. Check banner/actions on both phones.
+2. Use **Start Walk** with the app terminated; check one active walk and timer.
+   A normal banner tap should only open Profile, not start anything.
+3. Snooze, reopen, and verify the new reminder; skip today and check tomorrow
+   remains scheduled. Snoozing past the window should not schedule a late ping.
+4. Log/end a walk before a later reminder in the same window; it should not fire.
+5. Disable reminders, revoke permission, and sign out; check pending reminders
+   are canceled without affecting pack notifications. Re-enable after returning.
+6. Try a backdated start, then an overlapping start; only the valid one should
+   save. Check offline errors and that the normal Start/End flow still works.
+
 ## Hosted setup (done for `xbegbjicfgsozazlbysc`)
 
 ```bash

@@ -9,6 +9,7 @@ import { clearSignedPhotoUrlCache, hydrateSignedPhotoUrlCache } from '@/lib/sign
 import { cacheClearAll, cacheGet, cacheSet } from '@/lib/offline';
 import { resetPrefetchMemory } from '@/lib/prefetch';
 import { removePushToken } from '@/lib/notifications';
+import { setWalkReminderAccount } from '@/lib/walkReminders';
 
 type CachedAccount = {
   profile: Profile;
@@ -124,6 +125,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signOut = useCallback(async () => {
+    await setWalkReminderAccount(null);
     // Needs the outgoing session's RLS, so it runs before the sign-out.
     await removePushToken().catch(() => {});
     await authSignOut();
