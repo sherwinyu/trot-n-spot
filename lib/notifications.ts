@@ -13,6 +13,7 @@ export type PushPermission = 'granted' | 'denied' | 'undetermined' | 'unavailabl
 // behind our own explainer, at most this many times.
 export const MAX_SOFT_PROMPTS = 2;
 const SOFT_PROMPT_KEY = 'push:soft-prompts';
+const SIGN_OUT_PUSH_TOKEN_WAIT_MS = 5_000;
 
 // expo-notifications inherits the permission response type from
 // expo-modules-core; keep the narrow local shape so consumers do not need
@@ -68,7 +69,19 @@ export async function syncPushToken(): Promise<string | null> {
 
 export async function removePushToken(): Promise<void> {
   if (Platform.OS === 'web') return;
-  const token = await getExpoPushToken();
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  let token: string | null;
+  try {
+    // Token acquisition can hang without APNs; sign-out must still work.
+    token = await Promise.race([
+      getExpoPushToken(),
+      new Promise<null>((resolve) => {
+        timeout = setTimeout(() => resolve(null), SIGN_OUT_PUSH_TOKEN_WAIT_MS);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timeout);
+  }
   if (token) await supabase.from('push_tokens').delete().eq('token', token);
 }
 
