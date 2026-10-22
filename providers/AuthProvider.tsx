@@ -125,10 +125,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signOut = useCallback(async () => {
-    await setWalkReminderAccount(null);
     // Needs the outgoing session's RLS, so it runs before the sign-out.
     await removePushToken().catch(() => {});
     await authSignOut();
+    await setWalkReminderAccount(null).catch((e) => console.warn('reminder cleanup failed', e));
     clearSignedPhotoUrlCache();
     resetPrefetchMemory();
     await cacheClearAll().catch(() => {});

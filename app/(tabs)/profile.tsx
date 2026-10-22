@@ -53,7 +53,7 @@ export default function ProfileScreen() {
   const handleSignOut = () => {
     confirm('Sign Out', 'Are you sure?', async () => {
       try { await signOut(); }
-      catch { notify('Could not sign out', 'Please try again so this device’s reminders can be removed.'); }
+      catch { notify('Could not sign out', 'Check your connection and try again.'); }
     }, 'Sign Out');
   };
 

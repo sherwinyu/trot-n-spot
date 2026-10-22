@@ -210,14 +210,15 @@ export function handleWalkReminderAction(
     if (state.handled.includes(request.identifier)) return null;
     state.handled.push(request.identifier);
     const now = new Date();
-    const isCurrent = state.isEnabled && data.day === localDay(now) &&
+    const isToday = state.isEnabled && data.day === localDay(now);
+    const isCurrent = isToday &&
       now >= atMinute(now, WALK_WINDOWS[data.slot].start) && now < atMinute(now, WALK_WINDOWS[data.slot].end);
     let result: 'start' | 'open' | 'snoozed' | 'skipped' | 'expired' = 'open';
-    if (!isCurrent) result = 'expired';
-    else if (action === WALK_ACTIONS.skip) {
+    if (isToday && action === WALK_ACTIONS.skip) {
       state.skippedDays.push(data.day);
       result = 'skipped';
-    } else if (action === WALK_ACTIONS.snooze) {
+    } else if (!isCurrent) result = 'expired';
+    else if (action === WALK_ACTIONS.snooze) {
       const date = new Date(now.getTime() + 30 * 60_000);
       if (!hasActiveJourney && !state.skippedDays.includes(data.day) &&
         !state.completedSlots.includes(`${data.day}:${data.slot}`) && date < atMinute(now, WALK_WINDOWS[data.slot].end)) {
