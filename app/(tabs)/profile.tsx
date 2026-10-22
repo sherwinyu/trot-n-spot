@@ -86,13 +86,13 @@ export default function ProfileScreen() {
           <>
             <Text style={styles.timer}>{formatTimer(journeyDuration)}</Text>
             <TouchableOpacity style={styles.endButton} accessibilityRole="button" disabled={walkBusy || isBusy || journeyLoading} onPress={() => changeWalk()}>
-              <Text style={styles.endButtonText}>{walkBusy ? 'Ending…' : 'End Walk'}</Text>
+              <Text style={styles.endButtonText}>{walkBusy || isBusy ? 'Saving…' : 'End Walk'}</Text>
             </TouchableOpacity>
           </>
         ) : (
           <>
             <TouchableOpacity style={styles.startButton} accessibilityRole="button" disabled={walkBusy || isBusy || journeyLoading} onPress={() => changeWalk()}>
-              <Text style={styles.startButtonText}>{walkBusy || isBusy ? 'Starting…' : 'Start Walk'}</Text>
+              <Text style={styles.startButtonText}>{walkBusy || isBusy ? 'Saving…' : 'Start Walk'}</Text>
             </TouchableOpacity>
             <Text style={styles.lateLabel}>Already walking? I started…</Text>
             <View style={styles.lateRow}>
