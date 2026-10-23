@@ -1,48 +1,120 @@
 import { supabase } from '@/lib/supabase';
+import { cacheGet, cacheSet } from '@/lib/offline';
 
-// Supabase signs URLs with a fresh token every call, even for the same
-// path — so without this cache every re-render/refetch/focus event hands
-// the Image component a brand-new URI and defeats its cache, forcing a
-// full re-download. Memoizing by path keeps the URI stable so the same
-// photo only ever downloads once per app session.
-const SIGNED_URL_TTL_SECONDS = 3600;
-const REFRESH_MARGIN_MS = 5 * 60 * 1000;
+// Photos are immutable, so URLs can live long; expiry is handled by
+// re-signing on load failure. The bucket is private and paths are
+// pack-scoped, so a leaked URL only exposes a photo the holder could see.
+export const SIGNED_URL_LIFETIME_SECONDS = 365 * 24 * 60 * 60;
+const EXPIRY_MARGIN_MS = 60 * 60 * 1000;
+const PERSIST_KEY = 'signed-urls';
 
-type CacheEntry = {
+type CachedSignedUrl = {
   url: string;
   expiresAt: number;
 };
 
-const cache = new Map<string, CacheEntry>();
-const inFlight = new Map<string, Promise<string | null>>();
+// Signed URLs are persisted so a cold start with no network can still hand
+// expo-image a source: the bytes live in its disk cache keyed by storage
+// path, so even an expired URL renders. The Supabase call only happens
+// when the URL is missing or about to expire.
+const signedUrlCache = new Map<string, CachedSignedUrl>();
+const inFlightRequests = new Map<string, Promise<string>>();
+let cacheGeneration = 0;
+let hydration: Promise<void> | null = null;
+let persistTimer: ReturnType<typeof setTimeout> | null = null;
 
-export function getSignedPhotoUrl(path: string, bucket = 'quest-photos'): Promise<string | null> {
-  const key = `${bucket}/${path}`;
-  const cached = cache.get(key);
-  if (cached && cached.expiresAt > Date.now()) {
-    return Promise.resolve(cached.url);
+export function hydrateSignedPhotoUrlCache(): Promise<void> {
+  if (!hydration) {
+    const generation = cacheGeneration;
+    hydration = cacheGet<Record<string, CachedSignedUrl>>(PERSIST_KEY)
+      .then((stored) => {
+        if (!stored || generation !== cacheGeneration) return;
+        for (const [path, entry] of Object.entries(stored)) {
+          if (!signedUrlCache.has(path)) signedUrlCache.set(path, entry);
+        }
+      })
+      .catch(() => {});
   }
+  return hydration;
+}
 
-  const pending = inFlight.get(key);
-  if (pending) return pending;
+function schedulePersist(): void {
+  if (persistTimer) return;
+  persistTimer = setTimeout(() => {
+    persistTimer = null;
+    cacheSet(PERSIST_KEY, Object.fromEntries(signedUrlCache)).catch(() => {});
+  }, 250);
+}
 
-  const request = supabase.storage
-    .from(bucket)
-    .createSignedUrl(path, SIGNED_URL_TTL_SECONDS)
-    .then(({ data }) => {
-      const url = data?.signedUrl ?? null;
-      if (url) {
-        cache.set(key, {
-          url,
-          expiresAt: Date.now() + SIGNED_URL_TTL_SECONDS * 1000 - REFRESH_MARGIN_MS,
+function isFresh(cached: CachedSignedUrl): boolean {
+  return cached.expiresAt > Date.now() + EXPIRY_MARGIN_MS;
+}
+
+export function peekSignedPhotoUrl(storagePath: string | null): string | null {
+  if (!storagePath) return null;
+  const cached = signedUrlCache.get(storagePath);
+  if (!cached || !isFresh(cached)) return null;
+  return cached.url;
+}
+
+// Last known URL regardless of expiry — good enough for expo-image to
+// consult its disk cache when we can't reach Supabase to re-sign.
+export function peekStaleSignedPhotoUrl(storagePath: string | null): string | null {
+  if (!storagePath) return null;
+  return signedUrlCache.get(storagePath)?.url ?? null;
+}
+
+export async function getSignedPhotoUrl(storagePath: string): Promise<string> {
+  const cached = peekSignedPhotoUrl(storagePath);
+  if (cached) return cached;
+
+  const existingRequest = inFlightRequests.get(storagePath);
+  if (existingRequest) return existingRequest;
+
+  const requestGeneration = cacheGeneration;
+  const request: Promise<string> = supabase.storage
+    .from('quest-photos')
+    .createSignedUrl(storagePath, SIGNED_URL_LIFETIME_SECONDS)
+    .then(({ data, error }) => {
+      if (error) throw error;
+      if (!data?.signedUrl) throw new Error('Photo URL was not returned');
+
+      if (requestGeneration === cacheGeneration) {
+        signedUrlCache.set(storagePath, {
+          url: data.signedUrl,
+          expiresAt: Date.now() + SIGNED_URL_LIFETIME_SECONDS * 1000,
         });
+        schedulePersist();
       }
-      return url;
+      return data.signedUrl;
     })
     .finally(() => {
-      inFlight.delete(key);
+      if (inFlightRequests.get(storagePath) === request) {
+        inFlightRequests.delete(storagePath);
+      }
     });
 
-  inFlight.set(key, request);
+  inFlightRequests.set(storagePath, request);
   return request;
+}
+
+// Drops a URL that failed to load (expired early, revoked, or signed with a
+// stale session) so the next request re-signs instead of retrying it.
+export function invalidateSignedPhotoUrl(storagePath: string, failedUrl: string): void {
+  if (signedUrlCache.get(storagePath)?.url !== failedUrl) return;
+  signedUrlCache.delete(storagePath);
+  schedulePersist();
+}
+
+// In-memory only; the persisted copy is removed with the other
+// `offline:cache:*` entries by `cacheClearAll` on sign-out.
+export function clearSignedPhotoUrlCache(): void {
+  cacheGeneration += 1;
+  signedUrlCache.clear();
+  inFlightRequests.clear();
+  hydration = null;
+  if (persistTimer) {
+    clearTimeout(persistTimer);
+    persistTimer = null;
+  }
 }

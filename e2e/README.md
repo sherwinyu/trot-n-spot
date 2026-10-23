@@ -37,7 +37,9 @@ that executes every data operation against the real Postgres **as the
 authenticated role with RLS active** — plus Expo web, then drives the
 real UI in Chromium through the full two-user story: sign in → walk →
 create quest with photo → location visible to creator only → packmate
-completes with photo → history with time-to-find. Screenshots land in
+reacts, comments, and deletes her own comment →
+completes with photo → history with time-to-find → creator sees the
+quest's activity timeline and replies. Screenshots land in
 `e2e/screenshots/`.
 
 If Docker is available you can run the same flows against genuine local

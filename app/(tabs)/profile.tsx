@@ -1,25 +1,64 @@
-import { StyleSheet, TouchableOpacity, Image } from 'react-native';
+import { useState } from 'react';
+import { WalkDudley } from '@/components/dudley/WalkDudley';
+import { StyleSheet, TouchableOpacity, Image, ScrollView, Switch, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Text, View } from '@/components/Themed';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
 import { useAuth } from '@/hooks/useAuth';
 import { useJourney } from '@/hooks/useJourney';
-import { confirm } from '@/lib/notify';
+import { confirm, notify } from '@/lib/notify';
 import { formatTimer } from '@/lib/format';
+import { supabase } from '@/lib/supabase';
+import { useNotifications } from '@/providers/NotificationProvider';
+import { WalkReminderSettings } from '@/components/WalkReminderSettings';
+import { WalkStartOffset } from '@/lib/journeys';
 
 export default function ProfileScreen() {
-  const { profile, packs, signOut } = useAuth();
-  const { activeJourney, startJourney, endJourney, journeyDuration } = useJourney();
+  const { profile, packs, signOut, refreshProfile } = useAuth();
+  const { permission, requestPermission, openSystemSettings } = useNotifications();
+  const [pushBusy, setPushBusy] = useState(false);
+  const pushEnabled = profile?.push_enabled ?? true;
+  const setPushEnabled = async (enabled: boolean) => {
+    if (!profile || pushBusy) return;
+    setPushBusy(true);
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ push_enabled: enabled })
+        .eq('id', profile.id);
+      if (error) throw error;
+      await refreshProfile();
+    } catch (err: any) {
+      notify('Error', err.message ?? 'Could not update notifications');
+    } finally {
+      setPushBusy(false);
+    }
+  };
+  const { activeJourney, startJourney, endJourney, journeyDuration, loading: journeyLoading, isBusy, error: journeyError, refreshJourney } = useJourney();
+  const [walkBusy, setWalkBusy] = useState(false);
+  const changeWalk = async (minutesAgo: WalkStartOffset = 0) => {
+    if (walkBusy || isBusy) return;
+    setWalkBusy(true);
+    try {
+      if (activeJourney) await endJourney();
+      else await startJourney(minutesAgo);
+    } catch (err: any) {
+      notify('Could not save your walk', err.message ?? 'Check your connection and try again.');
+    } finally { setWalkBusy(false); }
+  };
   const router = useRouter();
   const c = Colors[useColorScheme() ?? 'light'];
 
   const handleSignOut = () => {
-    confirm('Sign Out', 'Are you sure?', signOut, 'Sign Out');
+    confirm('Sign Out', 'Are you sure?', async () => {
+      try { await signOut(); }
+      catch { notify('Could not sign out', 'Check your connection and try again.'); }
+    }, 'Sign Out');
   };
 
   return (
-    <View style={styles.container}>
+    <ScrollView contentContainerStyle={styles.container}>
       <View style={styles.profileSection}>
         {profile?.avatar_url && (
           <Image source={{ uri: profile.avatar_url }} style={styles.avatar} />
@@ -37,30 +76,80 @@ export default function ProfileScreen() {
 
       <View style={[styles.journeySection, { backgroundColor: c.card }]}>
         <Text style={styles.sectionTitle}>Walk</Text>
+        {journeyError && (
+          <TouchableOpacity accessibilityRole="button" onPress={refreshJourney}>
+            <Text style={styles.errorText}>{journeyError} Tap to retry.</Text>
+          </TouchableOpacity>
+        )}
+        <WalkDudley journeyId={activeJourney?.id ?? null} loading={journeyLoading} />
         {activeJourney ? (
           <>
             <Text style={styles.timer}>{formatTimer(journeyDuration)}</Text>
-            <TouchableOpacity style={styles.endButton} onPress={endJourney}>
-              <Text style={styles.endButtonText}>End Walk</Text>
+            <TouchableOpacity style={styles.endButton} accessibilityRole="button" disabled={walkBusy || isBusy || journeyLoading} onPress={() => changeWalk()}>
+              <Text style={styles.endButtonText}>{walkBusy || isBusy ? 'Saving…' : 'End Walk'}</Text>
             </TouchableOpacity>
           </>
         ) : (
-          <TouchableOpacity style={styles.startButton} onPress={startJourney}>
-            <Text style={styles.startButtonText}>Start Walk</Text>
-          </TouchableOpacity>
+          <>
+            <TouchableOpacity style={styles.startButton} accessibilityRole="button" disabled={walkBusy || isBusy || journeyLoading} onPress={() => changeWalk()}>
+              <Text style={styles.startButtonText}>{walkBusy || isBusy ? 'Saving…' : 'Start Walk'}</Text>
+            </TouchableOpacity>
+            <Text style={styles.lateLabel}>Already walking? I started…</Text>
+            <View style={styles.lateRow}>
+              {([10, 20, 30] as const).map((minutes) => (
+                <TouchableOpacity key={minutes} accessibilityRole="button" accessibilityLabel={`Start walk ${minutes} minutes ago`}
+                  disabled={walkBusy || isBusy || journeyLoading} style={[styles.lateButton, { borderColor: c.border }]}
+                  onPress={() => changeWalk(minutes)}>
+                  <Text>{minutes} min ago</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </>
         )}
       </View>
+
+      <WalkReminderSettings />
+
+      {Platform.OS !== 'web' && (
+        <View style={[styles.journeySection, { backgroundColor: c.card }]}>
+          <Text style={styles.sectionTitle}>Notifications</Text>
+          {permission === 'granted' ? (
+            <View style={styles.toggleRow}>
+              <Text style={styles.toggleLabel}>Pack activity pings</Text>
+              <Switch value={pushEnabled} disabled={pushBusy} onValueChange={setPushEnabled} />
+            </View>
+          ) : permission === 'denied' ? (
+            <>
+              <Text style={styles.helpText}>Notifications are off in system settings.</Text>
+              <TouchableOpacity style={styles.startButton} accessibilityRole="button" onPress={openSystemSettings}>
+                <Text style={styles.startButtonText}>Open Settings</Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <>
+              <Text style={styles.helpText}>Get a ping when a packmate spots something or finds your quest.</Text>
+              <TouchableOpacity style={styles.startButton} accessibilityRole="button" onPress={() => requestPermission()}>
+                <Text style={styles.startButtonText}>Enable Notifications</Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
+      )}
 
       <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
         <Text style={styles.signOutText}>Sign Out</Text>
       </TouchableOpacity>
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
+  errorText: { color: '#EA4335', textAlign: 'center', marginBottom: 12 },
+  lateLabel: { fontSize: 14, color: '#777', marginTop: 20, marginBottom: 10 },
+  lateRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, backgroundColor: 'transparent' },
+  lateButton: { borderWidth: 1, borderRadius: 8, padding: 10 },
   container: {
-    flex: 1,
+    flexGrow: 1,
     padding: 24,
   },
   profileSection: {
@@ -98,6 +187,22 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 16,
     fontWeight: '600',
+    marginBottom: 12,
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    alignSelf: 'stretch',
+    backgroundColor: 'transparent',
+  },
+  toggleLabel: {
+    fontSize: 16,
+  },
+  helpText: {
+    fontSize: 14,
+    color: '#999',
+    textAlign: 'center',
     marginBottom: 12,
   },
   timer: {

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "55984834729",
+    "project_id": "trot-n-spot",
+    "storage_bucket": "trot-n-spot.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:55984834729:android:01ef7702d7893e1696c1b8",
+        "android_client_info": {
+          "package_name": "xyz.sherwinyu.trotnspot"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBYlg9qdceHNe30bFxY1VMRBekra-dnp0Y"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

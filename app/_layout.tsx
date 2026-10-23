@@ -1,18 +1,18 @@
-import 'react-native-gesture-handler';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { useFonts } from 'expo-font';
 import { Slot, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-reanimated';
 
 import { LogBox } from 'react-native';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { useColorScheme } from '@/components/useColorScheme';
 import { AuthProvider, useAuth } from '@/providers/AuthProvider';
 import { SyncProvider } from '@/providers/SyncProvider';
 import { NotificationProvider } from '@/providers/NotificationProvider';
+import { JourneyProvider } from '@/providers/JourneyProvider';
 
 export { ErrorBoundary } from 'expo-router';
 
@@ -37,6 +37,8 @@ function AuthGate() {
     const firstSegment = segments[0];
     const secondSegment = (segments as string[])[1] as string | undefined;
     const inAuthGroup = firstSegment === '(auth)';
+    // Let the callback exchange its code before any auth redirect, including cold starts.
+    if ((firstSegment as string) === 'auth' && secondSegment === 'callback') return;
 
     if (!session) {
       if (!inAuthGroup) router.replace('/(auth)/login');
@@ -76,9 +78,11 @@ export default function RootLayout() {
       <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
         <AuthProvider>
           <SyncProvider>
-            <NotificationProvider>
-              <AuthGate />
-            </NotificationProvider>
+            <JourneyProvider>
+              <NotificationProvider>
+                <AuthGate />
+              </NotificationProvider>
+            </JourneyProvider>
           </SyncProvider>
         </AuthProvider>
       </ThemeProvider>

@@ -5,12 +5,11 @@ import { Text, View } from '@/components/Themed';
 import { useAuth } from '@/hooks/useAuth';
 import { signInWithEmail, signUpWithEmail } from '@/lib/auth';
 
-// Email/password auth is the only working sign-in until Google is configured,
-// so keep it available in dev and in preview/test builds (where __DEV__ is
-// false). Set EXPO_PUBLIC_ENABLE_EMAIL_LOGIN=true at build time to expose it;
-// a real production build without the flag stays Google-only.
+// Enable Google only after configuring its provider and redirects in Supabase.
 const EMAIL_LOGIN_ENABLED =
   __DEV__ || process.env.EXPO_PUBLIC_ENABLE_EMAIL_LOGIN === 'true';
+const GOOGLE_LOGIN_ENABLED =
+  process.env.EXPO_PUBLIC_ENABLE_GOOGLE_LOGIN === 'true';
 
 export default function LoginScreen() {
   const { signIn } = useAuth();
@@ -124,17 +123,22 @@ export default function LoginScreen() {
         </View>
       )}
 
-      <TouchableOpacity
-        style={[styles.button, EMAIL_LOGIN_ENABLED && styles.googleButtonDev]}
-        onPress={handleSignIn}
-        disabled={loading}
-      >
-        {loading ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <Text style={styles.buttonText}>Sign in with Google</Text>
-        )}
-      </TouchableOpacity>
+      {GOOGLE_LOGIN_ENABLED && (
+        <TouchableOpacity
+          style={styles.button}
+          onPress={handleSignIn}
+          disabled={loading}
+          accessibilityRole="button"
+          accessibilityLabel="Sign in with Google"
+          accessibilityState={{ disabled: loading, busy: loading }}
+        >
+          {loading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.buttonText}>Sign in with Google</Text>
+          )}
+        </TouchableOpacity>
+      )}
 
       {error && <Text style={styles.error}>{error}</Text>}
     </View>
@@ -241,9 +245,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     width: '100%',
     alignItems: 'center',
-  },
-  googleButtonDev: {
-    backgroundColor: '#999',
   },
   buttonText: {
     color: '#fff',

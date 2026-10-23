@@ -1,39 +1,82 @@
-import { StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView } from 'react-native';
+import { StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView, KeyboardAvoidingView, Platform, TextInput } from 'react-native';
 import { Image } from 'expo-image';
-import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
-import { useState, useEffect } from 'react';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { QuestBackButton } from '@/components/QuestBackButton';
+import { QuestCompletion } from '@/components/QuestCompletion';
+import { DudleyLoading } from '@/components/dudley/Dudley';
+import { useState, useEffect, useRef, type ReactNode } from 'react';
 import { Text, View } from '@/components/Themed';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import { useCompleteQuest } from '@/hooks/useCompleteQuest';
 import { useJourney } from '@/hooks/useJourney';
-import { useSignedPhotoUrl } from '@/hooks/useSignedPhotoUrl';
-import { QUEST_COLUMNS_NO_LOCATION } from '@/hooks/useQuests';
+import { QUEST_COLUMNS_NO_LOCATION, QuestLists } from '@/hooks/useQuests';
+import { cacheGet, cacheSet, getQueue } from '@/lib/offline';
+import {
+  applyPendingMutations,
+  findQuestInLists,
+  removeQuestFromLists,
+  replaceQuestInLists,
+} from '@/lib/questFeed';
 import { usePackLookups } from '@/providers/AuthProvider';
 import { capturePhoto } from '@/lib/photos';
-import { notify } from '@/lib/notify';
-import { Quest } from '@/types/database';
-import { ImageViewerModal } from '@/components/ImageViewerModal';
+import { Quest, QuestComment } from '@/types/database';
+import { QuestPhoto } from '@/components/QuestPhoto';
+import { QuestManage } from '@/components/QuestManage';
+import { QuestActivity } from '@/components/QuestActivity';
+import { canCompleteQuest, canManageQuest } from '@/lib/questPermissions';
+import * as Crypto from 'expo-crypto';
+import { COMMENT_MAX_LENGTH } from '@/lib/questActivity';
+import { useColorScheme } from '@/components/useColorScheme';
+import Colors from '@/constants/Colors';
+
+// Keep the feed's last-good copy in step with a creator edit/delete so the
+// home screen doesn't flash stale data before its focus refresh lands.
+async function patchCachedLists(userId: string, patch: (lists: QuestLists) => QuestLists) {
+  const key = `quests:${userId}`;
+  const lists = await cacheGet<QuestLists>(key);
+  if (!lists) return;
+  const next = patch(lists);
+  if (next !== lists) await cacheSet(key, next);
+}
 
 export default function QuestDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { user } = useAuth();
   const { memberNames } = usePackLookups();
-  const { completeQuest, loading: completing, error } = useCompleteQuest();
+  const { completeQuest, completeFromComment, loading: completing, error } = useCompleteQuest();
+  const colors = Colors[useColorScheme() ?? 'light'];
   const { activeJourney } = useJourney();
 
+  const [completion, setCompletion] = useState<{ queued: boolean } | null>(null);
+  const submitting = useRef(false);
   const [quest, setQuest] = useState<Quest | null>(null);
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [capturedUri, setCapturedUri] = useState<string | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-
-  const photoUrl = useSignedPhotoUrl(quest?.photo_path);
-  const completionPhotoUrl = useSignedPhotoUrl(quest?.completion_photo_path);
+  const capturedCommentId = useRef<string>('');
+  const [caption, setCaption] = useState('');
 
   useEffect(() => {
     async function fetchQuest() {
+      // Show the copy from the feed cache first so the detail opens
+      // offline; the network fetch below replaces it when it lands.
+      if (user) {
+        const [cachedLists, queue] = await Promise.all([
+          cacheGet<QuestLists>(`quests:${user.id}`),
+          getQueue(user.id),
+        ]);
+        const cached = cachedLists
+          ? findQuestInLists(applyPendingMutations(cachedLists, queue, user.id), id)
+          : null;
+        if (cached) {
+          setQuest((prev) => prev ?? cached);
+          setLoading(false);
+        }
+      }
+
       // Never pull location with the quest itself — the assignee's
       // device shouldn't receive coordinates for an active hunt.
       const { data } = await supabase
@@ -64,168 +107,212 @@ export default function QuestDetailScreen() {
     fetchQuest();
   }, [id, user]);
 
-  const isActive = quest?.status === 'active';
-  // Targeted quests belong to their assignee; open quests are up for
-  // grabs by anyone in the pack except the person who spotted them.
-  const canAttempt =
-    !!quest &&
-    !!user &&
-    (quest.mode === 'targeted'
-      ? quest.assignee_id === user.id
-      : quest.creator_id !== user.id);
+  const canAttempt = !!quest && canCompleteQuest(quest, user?.id);
 
   const handleFoundIt = async () => {
     const uri = await capturePhoto();
-    if (uri) setCapturedUri(uri);
+    if (uri) {
+      capturedCommentId.current = Crypto.randomUUID();
+      setCapturedUri(uri);
+    }
   };
 
   const handleConfirmCompletion = async () => {
-    if (!capturedUri || !quest) return;
+    if (!capturedUri || !quest || submitting.current || completion) return;
+    submitting.current = true;
 
-    const result = await completeQuest({
-      questId: quest.id,
-      photoUri: capturedUri,
-      journeyId: activeJourney?.id,
-    });
+    try {
+      const result = await completeQuest({
+        questId: quest.id,
+        photoUri: capturedUri,
+        journeyId: activeJourney?.id,
+        commentId: capturedCommentId.current,
+        body: caption,
+      });
+      if (result) setCompletion(result);
+    } finally {
+      submitting.current = false;
+    }
+  };
 
-    if (result) {
-      notify(
-        'Quest Complete!',
-        result.queued ? "Nice find! It will sync when you're back online." : 'Nice find!',
-        () => router.back()
-      );
+  const handlePromote = async (comment: QuestComment) => {
+    if (!quest || submitting.current || completion) return;
+    submitting.current = true;
+    try {
+      const result = await completeFromComment(quest.id, comment.id, activeJourney?.id);
+      if (result) setCompletion(result);
+    } finally {
+      submitting.current = false;
     }
   };
 
   if (loading) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator size="large" />
-      </View>
+      <QuestPage>
+        <View style={styles.centered}><DudleyLoading loading /></View>
+      </QuestPage>
     );
   }
 
   if (!quest) {
     return (
-      <View style={styles.centered}>
-        <Text>Quest not found</Text>
-      </View>
+      <QuestPage>
+        <View style={styles.centered}><Text>Quest not found</Text></View>
+      </QuestPage>
+    );
+  }
+
+  if (completion) {
+    return (
+      <QuestPage>
+        <ScrollView contentContainerStyle={styles.content}>
+          <QuestCompletion queued={completion.queued} onContinue={() => router.replace('/(tabs)')} />
+        </ScrollView>
+      </QuestPage>
     );
   }
 
   return (
-    <>
-      <Stack.Screen options={{ title: quest.description || 'Quest' }} />
-      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-        {photoUrl && (
-          <TouchableOpacity onPress={() => setPreviewUrl(photoUrl)}>
-            <Image
-              source={{ uri: photoUrl }}
-              style={styles.mainPhoto}
-              cachePolicy="memory-disk"
-              transition={150}
-            />
-          </TouchableOpacity>
-        )}
+    <QuestPage>
+      <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView style={styles.container} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          <QuestPhoto
+            storagePath={quest.photo_path}
+            style={styles.mainPhoto}
+            accessibilityLabel={quest.description || 'Quest photo'}
+          />
 
-        {quest.description && (
-          <Text style={styles.description}>{quest.description}</Text>
-        )}
+          {quest.description && (
+            <Text style={styles.description}>{quest.description}</Text>
+          )}
 
-        <Text style={styles.meta}>
-          {quest.mode === 'open'
-            ? `${memberNames[quest.creator_id] ?? 'A packmate'} spotted this — open to the pack, first to find it wins`
-            : quest.assignee_id === user?.id
-              ? `${memberNames[quest.creator_id] ?? 'A packmate'} left this for you`
-              : `${memberNames[quest.creator_id] ?? 'A packmate'} left this for ${quest.assignee_id ? memberNames[quest.assignee_id] ?? 'a packmate' : 'the pack'}`}
-        </Text>
-
-        <Text style={styles.meta}>
-          Created {new Date(quest.created_at).toLocaleDateString()}
-        </Text>
-
-        {location && (
           <Text style={styles.meta}>
-            📍 Spotted at {location.lat.toFixed(5)}, {location.lng.toFixed(5)}
+            {quest.mode === 'open'
+              ? `${memberNames[quest.creator_id] ?? 'A packmate'} spotted this — open to the pack, first to find it wins`
+              : quest.assignee_id === user?.id
+                ? `${memberNames[quest.creator_id] ?? 'A packmate'} left this for you`
+                : `${memberNames[quest.creator_id] ?? 'A packmate'} left this for ${quest.assignee_id ? memberNames[quest.assignee_id] ?? 'a packmate' : 'the pack'}`}
           </Text>
-        )}
 
-        {quest.status === 'completed' && completionPhotoUrl && (
-          <>
-            <Text style={styles.sectionLabel}>
-              {quest.finder_id
-                ? `Found by ${quest.finder_id === user?.id ? 'you' : memberNames[quest.finder_id] ?? 'a packmate'}!`
-                : 'Found!'}
+          <Text style={styles.meta}>
+            Created {new Date(quest.created_at).toLocaleDateString()}
+          </Text>
+
+          {location && (
+            <Text style={styles.meta}>
+              📍 Spotted at {location.lat.toFixed(5)}, {location.lng.toFixed(5)}
             </Text>
-            <TouchableOpacity onPress={() => setPreviewUrl(completionPhotoUrl)}>
-              <Image
-                source={{ uri: completionPhotoUrl }}
-                style={styles.mainPhoto}
-                cachePolicy="memory-disk"
-                transition={150}
-              />
-            </TouchableOpacity>
-            {quest.completed_at && (
-              <Text style={styles.meta}>
-                Completed {new Date(quest.completed_at).toLocaleDateString()}
+          )}
+
+          {quest.status === 'completed' && quest.completion_photo_path && (
+            <>
+              <Text style={styles.sectionLabel}>
+                {quest.finder_id
+                  ? `Found by ${quest.finder_id === user?.id ? 'you' : memberNames[quest.finder_id] ?? 'a packmate'}!`
+                  : 'Found!'}
               </Text>
-            )}
-          </>
-        )}
-
-        {/* Completion flow for whoever may attempt this quest */}
-        {canAttempt && isActive && !capturedUri && (
-          <TouchableOpacity style={styles.foundButton} onPress={handleFoundIt}>
-            <Text style={styles.foundButtonText}>I Found It!</Text>
-          </TouchableOpacity>
-        )}
-
-        {/* Side-by-side comparison before confirming */}
-        {capturedUri && (
-          <>
-            <Text style={styles.sectionLabel}>Compare</Text>
-            <View style={styles.comparison}>
-              {photoUrl && (
-                <TouchableOpacity style={styles.comparisonPhoto} onPress={() => setPreviewUrl(photoUrl)}>
-                  <Image
-                    source={{ uri: photoUrl }}
-                    style={styles.comparisonPhoto}
-                    cachePolicy="memory-disk"
-                  />
-                </TouchableOpacity>
+              <QuestPhoto
+                storagePath={quest.completion_photo_path}
+                style={styles.mainPhoto}
+                accessibilityLabel="Completed quest photo"
+              />
+              {quest.completed_at && (
+                <Text style={styles.meta}>
+                  Completed {new Date(quest.completed_at).toLocaleDateString()}
+                </Text>
               )}
-              <TouchableOpacity style={styles.comparisonPhoto} onPress={() => setPreviewUrl(capturedUri)}>
-                <Image source={{ uri: capturedUri }} style={styles.comparisonPhoto} />
-              </TouchableOpacity>
-            </View>
+            </>
+          )}
 
-            <View style={styles.confirmActions}>
-              <TouchableOpacity
-                style={styles.retakeButton}
-                onPress={handleFoundIt}
-                disabled={completing}
-              >
-                <Text style={styles.retakeText}>Retake</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.confirmButton}
-                onPress={handleConfirmCompletion}
-                disabled={completing}
-              >
-                {completing ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.confirmText}>Complete Quest</Text>
-                )}
-              </TouchableOpacity>
-            </View>
+          {user && canManageQuest(quest, user.id) && !capturedUri && (
+            <QuestManage
+              quest={quest}
+              onUpdated={(updated) => {
+                setQuest(updated);
+                patchCachedLists(user.id, (lists) => replaceQuestInLists(lists, updated, user.id));
+              }}
+              onDeleted={() => {
+                patchCachedLists(user.id, (lists) => removeQuestFromLists(lists, quest.id));
+                router.replace('/(tabs)');
+              }}
+            />
+          )}
 
-            {error && <Text style={styles.error}>{error}</Text>}
-          </>
-        )}
-      </ScrollView>
-      <ImageViewerModal uri={previewUrl} onClose={() => setPreviewUrl(null)} />
-    </>
+          {/* Completion flow for whoever may attempt this quest */}
+          {canAttempt && !capturedUri && (
+            <TouchableOpacity style={styles.foundButton} onPress={handleFoundIt}>
+              <Text style={styles.foundButtonText}>I Found It!</Text>
+            </TouchableOpacity>
+          )}
+
+          {/* Side-by-side comparison before confirming */}
+          {capturedUri && (
+            <>
+              <Text style={styles.sectionLabel}>Compare</Text>
+              <View style={styles.comparison}>
+                <QuestPhoto
+                  storagePath={quest.photo_path}
+                  style={styles.comparisonPhoto}
+                  accessibilityLabel="Quest photo to match"
+                />
+                <Image
+                  source={{ uri: capturedUri }}
+                  style={styles.comparisonPhoto}
+                  contentFit="cover"
+                  accessibilityLabel="Your captured photo"
+                />
+              </View>
+
+              <TextInput
+                value={caption}
+                onChangeText={setCaption}
+                placeholder="Add a caption (optional)…"
+                accessibilityLabel="Photo caption"
+                maxLength={COMMENT_MAX_LENGTH}
+                editable={!completing}
+                style={[styles.caption, { color: colors.inputText, backgroundColor: colors.inputBackground, borderColor: colors.border }]}
+                placeholderTextColor={colors.placeholder}
+              />
+              <View style={styles.confirmActions}>
+                <TouchableOpacity
+                  style={styles.retakeButton}
+                  onPress={handleFoundIt}
+                  disabled={completing}
+                >
+                  <Text style={styles.retakeText}>Retake</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.confirmButton}
+                  onPress={handleConfirmCompletion}
+                  disabled={completing}
+                >
+                  {completing ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text style={styles.confirmText}>Complete Quest</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+              <TouchableOpacity onPress={() => { setCapturedUri(null); setCaption(''); }} disabled={completing} style={styles.cancelButton} accessibilityRole="button">
+                <Text>Cancel</Text>
+              </TouchableOpacity>
+            </>
+          )}
+
+          {error && <Text style={styles.error}>{error}</Text>}
+          {!capturedUri && <QuestActivity quest={quest} onComplete={handlePromote} completing={completing} />}
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </QuestPage>
+  );
+}
+
+function QuestPage({ children }: { children: ReactNode }) {
+  return (
+    <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right', 'bottom']}>
+      <QuestBackButton />
+      {children}
+    </SafeAreaView>
   );
 }
 
@@ -286,6 +373,8 @@ const styles = StyleSheet.create({
     gap: 12,
     backgroundColor: 'transparent',
   },
+  caption: { borderWidth: 1, borderRadius: 8, padding: 12, marginBottom: 12, fontSize: 15 },
+  cancelButton: { padding: 14, alignItems: 'center' },
   retakeButton: {
     flex: 1,
     paddingVertical: 14,

@@ -1,17 +1,32 @@
 # TrotNSpot (trot-n-spot)
 
-Async scavenger hunt app for couples during dog walks. React Native/Expo + Supabase. (Working title was "Quest" — the Android/iOS app id `com.trotnspot.quest`, URL scheme `quest://`, and dev emails like `test-sherwin@quest.dev` keep that name.)
+Async scavenger hunt app for couples during dog walks. React Native/Expo + Supabase. (Working title was "Quest" — the URL scheme `quest://` and dev emails like `test-sherwin@quest.dev` keep that name. The Android/iOS app id is `xyz.sherwinyu.trotnspot`.)
+
+## Shared agent workflow
+
+Read [AGENTS.md](AGENTS.md) for the async Linear workflow and
+[docs/agents/skill-overrides.md](docs/agents/skill-overrides.md) for repository policy.
+Skills in `.claude/skills/` link to the canonical `.agents/skills/` directories.
+Use `resume` to reorient and `checkpoint` to persist initiative state in Linear.
 
 ## Project Structure
 
 See `MVP_PLAN.md` for full architecture, database schema, and phased build order.
+
+The Groceries tab (SHE-103) lives in `features/groceries`, with shared contracts in
+`packages/receipt-model` and the receipt API/worker in `services/receipts`.
+Receipts use the existing Supabase project: the private `groceries` schema,
+`grocery-receipts` Storage bucket, and Trot n Spot Auth sessions.
+See `docs/groceries.md` for setup, account isolation, and verification commands.
+Receipt photos retain their original bytes; the quest-photo compression rule below
+applies only to quest photos.
 
 ## Tech Stack
 
 - **Client**: React Native + Expo (Expo Router v4, file-based routing)
 - **Backend**: Supabase (PostgreSQL, Auth, Storage, Edge Functions). A hosted project exists (`xbegbjicfgsozazlbysc.supabase.co`); the `preview` EAS profile bakes its URL/anon key in via env (see `eas.json`)
 - **Offline**: lightweight mutation queue + feed cache (`lib/offline.ts`, `lib/sync.ts`) — deliberately no PowerSync
-- **Auth**: Supabase Auth email login (shown when `__DEV__` or `EXPO_PUBLIC_ENABLE_EMAIL_LOGIN=true` at build time; Google OAuth planned, currently a stub in `lib/auth.ts`)
+- **Auth**: Supabase Auth email login (shown when `__DEV__` or `EXPO_PUBLIC_ENABLE_EMAIL_LOGIN=true` at build time; Google OAuth uses Supabase PKCE and the system browser; setup and the opt-in flag are in `docs/google-login.md`)
 - **Push**: Expo Notifications (DB trigger → edge function → Expo push API)
 - **E2E Testing**: Playwright web E2E (`e2e/run-e2e.js`) + Maestro on device
 - **Unit Testing**: Jest; DB tests via `scripts/db-test.sh` (plain Postgres, no Docker)
@@ -57,7 +72,7 @@ adb exec-out screencap -p > screen.png   # Screenshot
 - All routes live in `/app` (Expo Router file-based routing)
 - Business logic in `/hooks` and `/lib`, not in components
 - Quests are pack-scoped: every quest has a `pack_id` and a `mode` — `targeted` (one assignee) or `open` (any packmate, first to complete wins). Users can belong to multiple packs; membership changes only via the pack RPCs (`create_pack`/`join_pack`/`leave_pack`/`remove_pack_member`), never direct table writes
-- Completion only via the `complete_quest` RPC — it enforces mode rules and makes the open-quest race atomic (there is no direct-update RLS path)
+- Completion only via `complete_quest_from_comment` (or the legacy `complete_quest` wrapper) — it enforces mode rules and makes the open-quest race atomic (there is no direct-update RLS path)
 - Reads go through Supabase with a cached last-good copy (`useQuests`); offline writes queue in `lib/offline.ts` and replay via `SyncProvider`
 - Location fields are NEVER exposed to quest finders — always select `QUEST_COLUMNS_NO_LOCATION` (types/database.ts) for any list or detail fetch; location is fetched separately only for the creator or after completion
 - Photos compressed to max 1200px width, 80% JPEG quality before upload (`lib/photos.ts`)

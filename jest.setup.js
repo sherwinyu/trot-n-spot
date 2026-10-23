@@ -1,3 +1,4 @@
+import 'react-native-gesture-handler/jestSetup';
 // In-memory AsyncStorage mock (the package stopped shipping one in v3).
 jest.mock('@react-native-async-storage/async-storage', () => {
   let store = {};
@@ -10,6 +11,9 @@ jest.mock('@react-native-async-storage/async-storage', () => {
       }),
       removeItem: jest.fn(async (key) => {
         delete store[key];
+      }),
+      multiRemove: jest.fn(async (keys) => {
+        for (const key of keys) delete store[key];
       }),
       clear: jest.fn(async () => {
         store = {};

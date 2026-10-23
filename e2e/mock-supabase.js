@@ -135,6 +135,9 @@ function buildWhere(params, args) {
       if (op === 'eq') {
         args.push(operand);
         clauses.push(`${quoteIdent(key)} = $${args.length}`);
+      } else if (op === 'gt' || op === 'gte') {
+        args.push(operand);
+        clauses.push(`${quoteIdent(key)} ${op === 'gt' ? '>' : '>='} $${args.length}`);
       } else if (op === 'in') {
         // in.(a,b,c)
         const list = operand
@@ -329,12 +332,43 @@ const server = http.createServer(async (req, res) => {
     }
 
     // ----- storage -----
+    if (p === '/storage/v1/object/quest-photos' && req.method === 'DELETE') {
+      const user = authUser(req);
+      if (!user) return json(res, 401, { message: 'unauthorized' });
+      const body = JSON.parse((await readBody(req)).toString() || '{}');
+      if (!Array.isArray(body.prefixes) || body.prefixes.some((value) => typeof value !== 'string')) {
+        return json(res, 400, { message: 'Expected object path prefixes' });
+      }
+      const { rows } = await asUser(user, (client) =>
+        client.query(
+          `delete from storage.objects where bucket_id = 'quest-photos' and name = any($1::text[]) returning *`,
+          [body.prefixes]
+        )
+      );
+      for (const row of rows) {
+        fs.rmSync(path.join(storageDir, row.name.replace(/\//g, '__')), { force: true });
+      }
+      return json(res, 200, rows);
+    }
     const uploadMatch = p.match(/^\/storage\/v1\/object\/quest-photos\/(.+)$/);
     if (uploadMatch && req.method === 'POST') {
       const user = authUser(req);
       if (!user) return json(res, 401, { message: 'unauthorized' });
       const objectPath = decodeURIComponent(uploadMatch[1]);
-      const bytes = await readBody(req);
+      let bytes = await readBody(req);
+      // supabase-js wraps Blob uploads in FormData, including cacheControl.
+      // Store the file payload, not the multipart envelope.
+      const contentType = req.headers['content-type'] || '';
+      if (contentType.startsWith('multipart/form-data')) {
+        const form = await new Request('http://localhost/upload', {
+          method: 'POST',
+          headers: { 'content-type': contentType },
+          body: bytes,
+        }).formData();
+        const file = [...form.values()].find((value) => typeof value !== 'string');
+        if (!file) return json(res, 400, { message: 'Missing uploaded file' });
+        bytes = Buffer.from(await file.arrayBuffer());
+      }
 
       // Register the object as the caller so storage RLS runs for real.
       await asUser(user, (client) =>
@@ -441,6 +475,22 @@ const server = http.createServer(async (req, res) => {
           : '';
         const { rows } = await asUser(user, (client) =>
           client.query(`update ${quoteIdent(table)} set ${setSql} ${where} ${returning}`, args)
+        );
+        if (!returning) {
+          res.writeHead(204, CORS);
+          return res.end();
+        }
+        return respondRows(req, res, rows);
+      }
+
+      if (req.method === 'DELETE') {
+        const args = [];
+        const where = buildWhere(params, args);
+        const returning = (req.headers.prefer || '').includes('return=representation')
+          ? 'returning *'
+          : '';
+        const { rows } = await asUser(user, (client) =>
+          client.query(`delete from ${quoteIdent(table)} ${where} ${returning}`, args)
         );
         if (!returning) {
           res.writeHead(204, CORS);

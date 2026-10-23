@@ -25,14 +25,17 @@ diverged from the plan:
 - **Auth is email login** (plan Phase 2 wanted Google Sign-In). Google remains
   a stub in `lib/auth.ts` pending Google Cloud Console setup. Email login
   shows in dev builds and when `EXPO_PUBLIC_ENABLE_EMAIL_LOGIN=true`.
-- **Push notifications** (Phase 8) use a pg_net trigger (migration 006,
-  configured via the `app_config` table) → `send-push-notification` edge
-  function → Expo push API, rather than dashboard-configured webhooks.
+- **Push notifications** (Phase 8) use a pg_net trigger (migrations 006 +
+  `20260923230000_push_notifications`, configured via the `app_config` table)
+  → `send-push-notification` edge function → Expo push API, rather than
+  dashboard-configured webhooks. Tokens are per device (`push_tokens`), with a
+  per-user mute (`profiles.push_enabled`). Policy, deploy and Firebase setup:
+  `docs/push-notifications.md`.
 - **Three migrations the plan didn't anticipate**, all found by testing:
   007 fixes infinite recursion in the profiles RLS policy; 008 adds table
   grants to `authenticated` (RLS policies alone don't grant access); 009 pins
   `search_path` on SECURITY DEFINER functions (signup was failing via GoTrue).
-- **App renamed** Quest → TrotNSpot (app id `com.trotnspot.quest` and scheme
+- **App renamed** Quest → TrotNSpot (app id `xyz.sherwinyu.trotnspot` and scheme
   `quest://` keep the old name). Dog logo on icon + login screen; dark mode
   supported.
 - **Backend is live**: hosted Supabase project `xbegbjicfgsozazlbysc` — the
@@ -56,12 +59,13 @@ diverged from the plan:
   couples were auto-migrated into two-person packs. Reserved-but-inert columns
   (`packs.visibility`, `pack_members.status`, invite `expires_at`/`max_uses`)
   leave room for cross-pack/neighborhood features without another migration.
-  Open-quest creation/completion is deliberately feed-only (no push) so bigger
-  packs don't get noisy; targeted quests keep their push moments.
+  Push (SHE-133): targeted quest → assignee, open quest → the rest of the pack,
+  any completion → creator, pack join → existing members. Someone else
+  completing an open quest is feed-only.
 
-Remaining (not blocking daily use): Google Sign-In setup, push `app_config`
-rows + edge function deploy on the hosted project, end-to-end push
-verification on physical devices.
+Remaining (not blocking daily use): Google Sign-In setup, Firebase/FCM
+credentials for Android push, end-to-end push verification on physical
+devices (the hosted trigger, `app_config` rows and edge function are live).
 
 ---
 
@@ -83,10 +87,10 @@ verification on physical devices.
    - `react-native-reanimated` — animations
    - `@expo/vector-icons` — iconography
 3. Configure `app.json` / `app.config.ts`:
-   - Bundle identifiers: `com.trotnspot.quest` (iOS + Android)
+   - Bundle identifiers: `xyz.sherwinyu.trotnspot` (iOS + Android)
    - Set `expo-camera`, `expo-location`, `expo-notifications` permissions with user-facing descriptions
    - Configure `expo-updates` URL
-   - Set `newArchEnabled: true`
+   - Use Expo SDK 55's default New Architecture runtime
 4. Create `eas.json` for dev builds (development profile for iOS simulator + physical device, Android emulator + physical device)
 5. Set up environment config:
    - `/config/supabase.ts` — Supabase URL + anon key (from env vars)
@@ -164,7 +168,7 @@ verification on physical devices.
 | `avatar_url` | `text` | nullable | Google avatar |
 | `partner_id` | `uuid` | nullable, references `profiles(id)` | Paired partner |
 | `pair_code` | `text` | unique, not null | 6-char invite code |
-| `push_token` | `text` | nullable | Expo push token |
+| `push_enabled` | `boolean` | not null, default true | In-app mute; device tokens live in `push_tokens` |
 | `created_at` | `timestamptz` | not null, default now() | |
 | `updated_at` | `timestamptz` | not null, default now() | |
 

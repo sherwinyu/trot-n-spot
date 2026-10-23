@@ -21,7 +21,11 @@ describe('QUEST_COLUMNS_NO_LOCATION', () => {
       'status',
       'description',
       'photo_path',
+      'photo_full_path',
+      'photo_thumbnail_path',
       'completion_photo_path',
+      'completion_full_path',
+      'completion_thumbnail_path',
       'completed_at',
       'created_at',
     ]) {

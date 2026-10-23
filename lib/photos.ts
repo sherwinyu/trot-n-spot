@@ -1,32 +1,105 @@
 import { Platform } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
+import { Paths } from 'expo-file-system';
 import { supabase } from '@/lib/supabase';
+import { notify } from '@/lib/notify';
+import { getPhotoProcessingErrorMessage } from '@/lib/photoProcessingError';
+
+const IMMUTABLE_CACHE_SECONDS = '31536000';
+
+export type PhotoVariants = {
+  fullUri: string;
+  detailUri: string;
+  thumbnailUri: string;
+};
 
 // Camera capture isn't available on desktop web, so fall back to the
 // file picker there. Native always uses the camera per the spec.
+//
+// iOS's launchCameraAsync rejects (without prompting) unless camera
+// permission was already granted, so request it explicitly first.
 export async function capturePhoto(): Promise<string | null> {
   const options: ImagePicker.ImagePickerOptions = {
     mediaTypes: ['images'],
     quality: 1,
   };
 
-  const result =
-    Platform.OS === 'web'
-      ? await ImagePicker.launchImageLibraryAsync(options)
-      : await ImagePicker.launchCameraAsync(options);
+  if (Platform.OS === 'web') {
+    const result = await ImagePicker.launchImageLibraryAsync(options);
+    if (result.canceled || !result.assets[0]) return null;
+    return result.assets[0].uri;
+  }
 
-  if (result.canceled || !result.assets[0]) return null;
-  return result.assets[0].uri;
+  const permission = await ImagePicker.requestCameraPermissionsAsync();
+  if (!permission.granted) {
+    notify(
+      'Camera access needed',
+      'Allow camera access for TrotNSpot in your phone settings to take quest photos.'
+    );
+    return null;
+  }
+
+  try {
+    const result = await ImagePicker.launchCameraAsync(options);
+    if (result.canceled || !result.assets[0]) return null;
+    return result.assets[0].uri;
+  } catch (e) {
+    notify('Camera unavailable', e instanceof Error ? e.message : String(e));
+    return null;
+  }
 }
 
-export async function compressPhoto(photoUri: string): Promise<string> {
-  const manipulated = await ImageManipulator.manipulateAsync(
-    photoUri,
-    [{ resize: { width: 1200 } }],
-    { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
+export async function createPhotoVariants(photoUri: string): Promise<PhotoVariants> {
+  try {
+    // Keep the captured pixel dimensions for archival/download use, while
+    // normalizing the file to a maximum-quality JPEG. Generate the smaller
+    // variants sequentially to avoid decoding a multi-megapixel photo several
+    // times concurrently on memory-constrained phones.
+    const full = await ImageManipulator.manipulateAsync(
+      photoUri,
+      [],
+      { compress: 1, format: ImageManipulator.SaveFormat.JPEG }
+    );
+    const detail = await ImageManipulator.manipulateAsync(
+      photoUri,
+      [{ resize: { width: 1200 } }],
+      { compress: 0.82, format: ImageManipulator.SaveFormat.JPEG }
+    );
+    // 480 px covers an 80-point feed image at 3x density and remains sharp in
+    // the wider side-by-side history cards without serving the detail image.
+    const thumbnail = await ImageManipulator.manipulateAsync(
+      photoUri,
+      [{ resize: { width: 480 } }],
+      { compress: 0.65, format: ImageManipulator.SaveFormat.JPEG }
+    );
+
+    return {
+      fullUri: full.uri,
+      detailUri: detail.uri,
+      thumbnailUri: thumbnail.uri,
+    };
+  } catch (error) {
+    let availableDiskSpace: number | undefined;
+    if (Platform.OS !== 'web') {
+      try {
+        availableDiskSpace = Paths.availableDiskSpace;
+      } catch {
+        availableDiskSpace = undefined;
+      }
+    }
+    throw new Error(getPhotoProcessingErrorMessage(error, availableDiskSpace));
+  }
+}
+
+function isDuplicateUpload(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const candidate = error as { statusCode?: string | number; error?: string; message?: string };
+  return (
+    String(candidate.statusCode) === '409' ||
+    candidate.error === 'Duplicate' ||
+    /already exists|duplicate/i.test(candidate.message ?? '')
   );
-  return manipulated.uri;
 }
 
 export async function uploadPhoto(localUri: string, storagePath: string): Promise<void> {
@@ -36,8 +109,14 @@ export async function uploadPhoto(localUri: string, storagePath: string): Promis
     const blob = await response.blob();
     const { error } = await supabase.storage
       .from('quest-photos')
-      .upload(storagePath, blob, { contentType: 'image/jpeg', upsert: true });
-    if (error) throw error;
+      .upload(storagePath, blob, {
+        contentType: 'image/jpeg',
+        cacheControl: IMMUTABLE_CACHE_SECONDS,
+        upsert: false,
+      });
+    // Offline replay may retry after the upload succeeded but its response was
+    // lost. Immutable paths make an existing object equivalent to success.
+    if (error && !isDuplicateUpload(error)) throw error;
     return;
   }
 
@@ -55,7 +134,11 @@ export async function uploadPhoto(localUri: string, storagePath: string): Promis
 
   const { error } = await supabase.storage
     .from('quest-photos')
-    .upload(storagePath, formData, { contentType: 'image/jpeg', upsert: true });
+    .upload(storagePath, formData, {
+      contentType: 'image/jpeg',
+      cacheControl: IMMUTABLE_CACHE_SECONDS,
+      upsert: false,
+    });
 
-  if (error) throw error;
+  if (error && !isDuplicateUpload(error)) throw error;
 }

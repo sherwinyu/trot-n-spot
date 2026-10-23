@@ -1,0 +1,16 @@
+# Supabase owns Postgres and Storage. This only runs the API and extraction worker.
+services:
+  api:
+    build:
+      context: ../..
+      dockerfile: services/receipts/Dockerfile
+    env_file: .env
+    ports: ['3001:3001']
+    restart: unless-stopped
+  worker:
+    build:
+      context: ../..
+      dockerfile: services/receipts/Dockerfile
+    env_file: .env
+    command: ['node', '--import', 'tsx', 'src/worker-main.ts']
+    restart: unless-stopped

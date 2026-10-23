@@ -17,10 +17,17 @@ values
   ('00000000-0000-0000-0000-000000000000', 'dddddddd-dddd-dddd-dddd-dddddddddddd', 'authenticated', 'authenticated', 'test-dave@quest.dev', crypt('testpass123', gen_salt('bf')), now(), '{"full_name": "Dave"}'::jsonb, now(), now(), '', '', '', ''),
   ('00000000-0000-0000-0000-000000000000', 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', 'authenticated', 'authenticated', 'test-eve@quest.dev', crypt('testpass123', gen_salt('bf')), now(), '{"full_name": "Eve"}'::jsonb, now(), now(), '', '', '', '');
 
--- storage objects matching one seeded quest, for storage RLS tests
+-- Variant metadata + storage objects matching one seeded quest, for storage RLS tests
+update quests set
+  photo_full_path = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/11111111-1111-1111-1111-111111111111/full.jpg',
+  photo_thumbnail_path = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/11111111-1111-1111-1111-111111111111/thumbnail.jpg'
+where id = '11111111-1111-1111-1111-111111111111';
+
 insert into storage.objects (bucket_id, name)
 values
-  ('quest-photos', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/11111111-1111-1111-1111-111111111111/original.jpg');
+  ('quest-photos', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/11111111-1111-1111-1111-111111111111/original.jpg'),
+  ('quest-photos', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/11111111-1111-1111-1111-111111111111/full.jpg'),
+  ('quest-photos', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/11111111-1111-1111-1111-111111111111/thumbnail.jpg');
 
 -- ============ profile trigger ============
 do $$
@@ -173,6 +180,24 @@ end $$;
 -- ============ complete_quest RPC: targeted mode ============
 -- Quest 1: creator = Nadia (b), assignee = Sherwin (a)
 
+-- Anonymous callers are rejected before nullable auth comparisons.
+reset role;
+select set_config('request.jwt.claims', '{}'::text, false);
+set role anon;
+do $$
+declare result json;
+begin
+  result := complete_quest(
+    '11111111-1111-1111-1111-111111111111',
+    'anonymous/11111111-1111-1111-1111-111111111111/completion.jpg',
+    null
+  );
+  assert result ->> 'error' = 'Not signed in', 'anonymous completion rejected';
+  raise notice 'PASS: complete_quest requires authentication';
+end $$;
+reset role;
+set role authenticated;
+
 -- Creator cannot complete own quest
 select test_login('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
 do $$
@@ -188,13 +213,25 @@ select test_login('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
 do $$
 declare result json;
 begin
-  result := complete_quest('11111111-1111-1111-1111-111111111111', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/11111111-1111-1111-1111-111111111111/completion.jpg', null);
+  result := complete_quest('11111111-1111-1111-1111-111111111111', 'x.jpg', null);
+  assert result ->> 'error' = 'Invalid completion photo path', 'completion path is scoped to finder and quest';
+
+  result := complete_quest(
+    '11111111-1111-1111-1111-111111111111',
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/11111111-1111-1111-1111-111111111111/completion-detail.jpg',
+    null,
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/11111111-1111-1111-1111-111111111111/completion-full.jpg',
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/11111111-1111-1111-1111-111111111111/completion-thumbnail.jpg'
+  );
   assert (result ->> 'success')::boolean, 'assignee completes quest';
 
   reset role;
   assert (select status from quests where id = '11111111-1111-1111-1111-111111111111') = 'completed', 'status flipped';
   assert (select completed_at from quests where id = '11111111-1111-1111-1111-111111111111') is not null, 'completed_at set';
   assert (select finder_id from quests where id = '11111111-1111-1111-1111-111111111111') = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'finder recorded';
+  assert (select completion_photo_path from quests where id = '11111111-1111-1111-1111-111111111111') like '%/completion-detail.jpg', 'completion detail path recorded';
+  assert (select completion_full_path from quests where id = '11111111-1111-1111-1111-111111111111') like '%/completion-full.jpg', 'completion full path recorded';
+  assert (select completion_thumbnail_path from quests where id = '11111111-1111-1111-1111-111111111111') like '%/completion-thumbnail.jpg', 'completion thumbnail path recorded';
   set local role authenticated;
 
   -- double completion (offline replay) stays idempotent
@@ -257,23 +294,22 @@ select test_login('cccccccc-cccc-cccc-cccc-cccccccccccc');
 do $$
 declare
   carol_pack uuid;
-  race_quest uuid;
+  race_quest uuid := '77777777-7777-7777-7777-777777777777';
   result json;
 begin
   reset role;
   select id into carol_pack from packs where name = 'Dog Squad';
   set local role authenticated;
 
-  insert into quests (pack_id, creator_id, assignee_id, mode, photo_path, description)
-  values (carol_pack, auth.uid(), null, 'open', 'cccccccc-cccc-cccc-cccc-cccccccccccc/race/original.jpg', 'race test')
-  returning id into race_quest;
+  insert into quests (id, pack_id, creator_id, assignee_id, mode, photo_path, description)
+  values (race_quest, carol_pack, auth.uid(), null, 'open', 'cccccccc-cccc-cccc-cccc-cccccccccccc/77777777-7777-7777-7777-777777777777/detail.jpg', 'race test');
 
   perform test_login('dddddddd-dddd-dddd-dddd-dddddddddddd');
-  result := complete_quest(race_quest, 'dddddddd-dddd-dddd-dddd-dddddddddddd/race/completion.jpg', null);
+  result := complete_quest(race_quest, 'dddddddd-dddd-dddd-dddd-dddddddddddd/77777777-7777-7777-7777-777777777777/completion-detail.jpg', null);
   assert (result ->> 'success')::boolean, 'dave wins the race';
 
   perform test_login('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee');
-  result := complete_quest(race_quest, 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee/race/completion.jpg', null);
+  result := complete_quest(race_quest, 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee/77777777-7777-7777-7777-777777777777/completion-detail.jpg', null);
   assert result ->> 'error' = 'Already found by Dave', 'loser told who won';
 
   perform test_login('dddddddd-dddd-dddd-dddd-dddddddddddd');
@@ -357,18 +393,110 @@ select test_login('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
 do $$
 begin
   assert (select count(*) from storage.objects
-          where name = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/11111111-1111-1111-1111-111111111111/original.jpg') = 1,
-    'packmate reads quest photo';
-  raise notice 'PASS: packmate can read quest photos';
+          where name like 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/11111111-1111-1111-1111-111111111111/%') = 3,
+    'packmate reads all quest photo variants';
+  raise notice 'PASS: packmate can read all quest photo variants';
 end $$;
 
 select test_login('cccccccc-cccc-cccc-cccc-cccccccccccc');
 do $$
 begin
   assert (select count(*) from storage.objects
-          where name = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/11111111-1111-1111-1111-111111111111/original.jpg') = 0,
-    'outsider cannot read quest photo';
-  raise notice 'PASS: outsider cannot read another pack''s quest photos';
+          where name like 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/11111111-1111-1111-1111-111111111111/%') = 0,
+    'outsider cannot read quest photo variants';
+  raise notice 'PASS: outsider cannot read another pack''s quest photo variants';
+end $$;
+
+-- ============ creator edit / delete (013) ============
+-- Quest 2: creator = Nadia (b), assignee = Sherwin (a). Only the creator
+-- may edit or delete; a packmate (even the assignee) and a stranger get 0 rows.
+select test_login('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+do $$
+declare affected int;
+begin
+  update quests set description = 'assignee edit' where id = '22222222-2222-2222-2222-222222222222';
+  get diagnostics affected = row_count;
+  assert affected = 0, 'assignee cannot edit a packmate''s quest';
+  delete from quests where id = '22222222-2222-2222-2222-222222222222';
+  get diagnostics affected = row_count;
+  assert affected = 0, 'assignee cannot delete a packmate''s quest';
+  raise notice 'PASS: non-creator packmate cannot edit or delete quests';
+end $$;
+
+select test_login('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee');
+do $$
+declare affected int;
+begin
+  delete from quests where id = '22222222-2222-2222-2222-222222222222';
+  get diagnostics affected = row_count;
+  assert affected = 0, 'stranger delete must affect 0 rows';
+  raise notice 'PASS: stranger cannot delete quests';
+end $$;
+
+select test_login('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
+do $$
+declare affected int;
+begin
+  update quests set description = 'edited by creator', assignee_id = null, mode = 'open'
+    where id = '22222222-2222-2222-2222-222222222222';
+  get diagnostics affected = row_count;
+  assert affected = 1, 'creator edits own quest';
+  assert (select description from quests where id = '22222222-2222-2222-2222-222222222222') = 'edited by creator', 'description updated';
+  assert (select mode from quests where id = '22222222-2222-2222-2222-222222222222') = 'open', 'reassigned to the pack';
+
+  -- Client guards reassignment with status = 'active' so a hunt completed
+  -- mid-edit keeps its finder/assignee pairing (quest 5 is completed).
+  update quests set assignee_id = null, mode = 'open'
+    where id = '55555555-5555-5555-5555-555555555555' and status = 'active';
+  get diagnostics affected = row_count;
+  assert affected = 0, 'reassign of a completed quest is a no-op under the active guard';
+  update quests set description = 'hint edit on completed quest'
+    where id = '55555555-5555-5555-5555-555555555555';
+  get diagnostics affected = row_count;
+  assert affected = 1, 'creator can still edit the hint of a completed quest';
+
+  -- Reassigning to someone outside the pack is rejected at the DB even
+  -- though the creator passes the row-level USING check (Eve is a stranger).
+  begin
+    update quests set assignee_id = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', mode = 'targeted'
+      where id = '22222222-2222-2222-2222-222222222222';
+    raise exception 'reassign to non-member should have been rejected';
+  exception when insufficient_privilege then
+    null;
+  end;
+  assert (select assignee_id from quests where id = '22222222-2222-2222-2222-222222222222') is null, 'assignee unchanged after rejected reassign';
+
+  -- The seeded photo_path of quest 2 is this object: while the row exists
+  -- the object is still referenced and must survive a delete attempt.
+  insert into storage.objects (bucket_id, name)
+  values ('quest-photos', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/22222222-2222-2222-2222-222222222222/original.jpg');
+  delete from storage.objects
+    where name = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/22222222-2222-2222-2222-222222222222/original.jpg';
+  get diagnostics affected = row_count;
+  assert affected = 0, 'photo still referenced by a quest cannot be deleted';
+
+  delete from quests where id = '22222222-2222-2222-2222-222222222222';
+  get diagnostics affected = row_count;
+  assert affected = 1, 'creator deletes own quest';
+  assert (select count(*) from quests where id = '22222222-2222-2222-2222-222222222222') = 0, 'quest gone';
+
+  delete from storage.objects
+    where name = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/22222222-2222-2222-2222-222222222222/original.jpg';
+  get diagnostics affected = row_count;
+  assert affected = 1, 'creator removes own photo object once unreferenced';
+  raise notice 'PASS: creator can edit and delete own quest';
+end $$;
+
+-- Photos in someone else's folder are off limits even for pack members
+select test_login('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+do $$
+declare affected int;
+begin
+  delete from storage.objects
+    where name = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/11111111-1111-1111-1111-111111111111/full.jpg';
+  get diagnostics affected = row_count;
+  assert affected = 0, 'packmate cannot delete another user''s photo';
+  raise notice 'PASS: storage deletes restricted to own folder';
 end $$;
 
 -- ============ push trigger resilience ============
@@ -382,7 +510,241 @@ begin
   values ('facadefa-cade-4ace-8ade-000000000001', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/trigger-test/original.jpg', 'trigger resilience test');
   raise notice 'PASS: quest insert survives push-webhook dispatch failure';
 end $$;
+-- Pack joins now dispatch too, and go through the RPC as a real user.
+set role authenticated;
+select test_login('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee');
+do $$
+declare
+  result jsonb;
+begin
+  result := join_pack('WOOF01');
+  assert result->>'error' is null, 'join_pack with webhook configured: ' || coalesce(result->>'error', '');
+  raise notice 'PASS: pack join survives push-webhook dispatch failure';
+end $$;
+reset role;
 delete from app_config where key = 'push_webhook_url';
 
+-- ============ push_tokens + push_enabled ============
+do $$
+begin
+  assert not exists (
+    select 1 from information_schema.columns
+    where table_name = 'profiles' and column_name = 'push_token'
+  ), 'profiles.push_token dropped';
+  assert (select bool_and(push_enabled) from profiles), 'push_enabled defaults on';
+  raise notice 'PASS: profiles.push_token replaced by push_enabled';
+end $$;
+
+set role authenticated;
+select test_login('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+insert into push_tokens (token, user_id, platform)
+values ('ExponentPushToken[sherwin-phone]', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'ios'),
+       ('ExponentPushToken[sherwin-tablet]', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'android');
+-- Re-registering the same device is an upsert, not a conflict.
+insert into push_tokens (token, user_id, platform)
+values ('ExponentPushToken[sherwin-phone]', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'ios')
+on conflict (token) do update set user_id = excluded.user_id, platform = excluded.platform;
+do $$
+begin
+  assert (select count(*) from push_tokens) = 2, 'sherwin keeps one row per device';
+  begin
+    insert into push_tokens (token, user_id, platform)
+    values ('ExponentPushToken[forged]', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'ios');
+    raise exception 'sherwin registered a token for nadia';
+  exception when insufficient_privilege or check_violation then null;
+  end;
+  update profiles set push_enabled = false where id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+  assert (select push_enabled from profiles where id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa') = false, 'user can mute push';
+  raise notice 'PASS: push_tokens RLS + push_enabled toggle';
+end $$;
+
+select test_login('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
+do $$
+begin
+  assert (select count(*) from push_tokens) = 0, 'nadia cannot see sherwin''s tokens';
+  raise notice 'PASS: push tokens are private to their owner';
+end $$;
+
+-- Nadia signs in on Sherwin's tablet: the RPC re-homes the device token.
+select register_push_token('ExponentPushToken[sherwin-tablet]', 'android');
+do $$
+begin
+  assert (select user_id from push_tokens where token = 'ExponentPushToken[sherwin-tablet]')
+         = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'token re-homed to the signed-in user';
+  assert (select count(*) from push_tokens) = 1, 'nadia now owns exactly the tablet';
+  raise notice 'PASS: register_push_token claims a device across accounts';
+end $$;
+
 reset role;
+
+-- ============ notifications (activity feed) ============
+-- Rows are written by the edge function with the service role.
+insert into notifications (user_id, actor_id, type, pack_id, title, body)
+select 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'pack_joined', id, 'Nadia joined', 'Say hi'
+from packs where name = 'Sherwin & Nadia';
+insert into notifications (user_id, actor_id, type, pack_id, title, body)
+select 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'pack_joined', id, 'Sherwin joined', 'Say hi'
+from packs where name = 'Sherwin & Nadia';
+
+set role authenticated;
+select test_login('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+do $$
+begin
+  assert (select count(*) from notifications) = 1, 'sherwin sees only his own activity';
+  assert (select read_at from notifications) is null, 'new activity is unread';
+  begin
+    insert into notifications (user_id, type, title, body)
+    values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'pack_joined', 'forged', 'forged');
+    raise exception 'client inserted an activity row';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    update notifications set title = 'edited';
+  exception when insufficient_privilege then null;
+  end;
+  assert not exists (select 1 from notifications where title = 'edited'), 'client edited an activity row';
+  raise notice 'PASS: notifications are read-only and private to the recipient';
+end $$;
+
+select mark_notifications_read();
+do $$
+begin
+  assert (select bool_and(read_at is not null) from notifications), 'sherwin''s activity marked read';
+  raise notice 'PASS: mark_notifications_read';
+end $$;
+
+select test_login('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
+do $$
+begin
+  assert (select count(*) from notifications where read_at is null) = 1, 'nadia''s activity untouched';
+  raise notice 'PASS: mark_notifications_read scopes to the caller';
+end $$;
+
+-- ============ quest comments + reactions ============
+reset role;
+insert into quests (id, pack_id, creator_id, assignee_id, photo_path, description)
+values ('c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1', 'facadefa-cade-4ace-8ade-000000000001', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1/original.jpg', 'comment test');
+
+set role authenticated;
+select test_login('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
+do $$
+declare
+  stored_pack uuid;
+begin
+  -- pack_id is always taken from the quest, whatever the client sends
+  insert into quest_comments (id, quest_id, pack_id, author_id, body)
+  values ('c0000000-0000-4000-8000-000000000001', 'c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1', gen_random_uuid(), 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'Is it near the park?')
+  returning pack_id into stored_pack;
+  assert stored_pack = 'facadefa-cade-4ace-8ade-000000000001', 'comment pack_id copied from quest';
+  begin
+    insert into quest_comments (quest_id, author_id, body)
+    values ('c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'forged');
+    raise exception 'commented as someone else';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    insert into quest_comments (quest_id, author_id, body)
+    values ('c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', '   ');
+    raise exception 'blank comment accepted';
+  exception when check_violation then null;
+  end;
+  insert into quest_reactions (quest_id, user_id, kind)
+  values ('c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'love');
+  begin
+    insert into quest_reactions (quest_id, user_id, kind)
+    values ('c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'love');
+    raise exception 'duplicate reaction accepted';
+  exception when unique_violation then null;
+  end;
+  begin
+    insert into quest_reactions (quest_id, user_id, kind)
+    values ('c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'thumbs');
+    raise exception 'unknown reaction kind accepted';
+  exception when check_violation then null;
+  end;
+  begin
+    insert into quest_reactions (quest_id, user_id, kind)
+    values ('c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'fire');
+    raise exception 'reacted as someone else';
+  exception when insufficient_privilege then null;
+  end;
+  raise notice 'PASS: packmates comment and react only as themselves';
+end $$;
+
+select test_login('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+do $$
+declare affected int;
+begin
+  assert (select count(*) from quest_comments where quest_id = 'c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1' and kind = 'reply') = 1, 'packmate sees the comment';
+  assert (select count(*) from quest_reactions where quest_id = 'c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1') = 1, 'packmate sees the reaction';
+  delete from quest_comments where id = 'c0000000-0000-4000-8000-000000000001';
+  get diagnostics affected = row_count;
+  assert affected = 0, 'cannot delete a packmate''s comment';
+  delete from quest_reactions where user_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+  get diagnostics affected = row_count;
+  assert affected = 0, 'cannot delete a packmate''s reaction';
+  begin
+    update quest_comments set body = 'edited';
+  exception when insufficient_privilege then null;
+  end;
+  assert not exists (select 1 from quest_comments where body = 'edited'), 'comments are immutable';
+  raise notice 'PASS: packmates see but cannot change each other''s comments/reactions';
+end $$;
+
+select test_login('cccccccc-cccc-cccc-cccc-cccccccccccc');
+do $$
+begin
+  assert (select count(*) from quest_comments where quest_id = 'c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1') = 0, 'outsider sees no comments';
+  assert (select count(*) from quest_reactions) = 0, 'outsider sees no reactions';
+  begin
+    insert into quest_comments (quest_id, author_id, body)
+    values ('c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'sneaky');
+    raise exception 'outsider commented';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    insert into quest_reactions (quest_id, user_id, kind)
+    values ('c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'wow');
+    raise exception 'outsider reacted';
+  exception when insufficient_privilege then null;
+  end;
+  raise notice 'PASS: comments/reactions are pack-scoped';
+end $$;
+
+select test_login('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
+do $$
+declare affected int;
+begin
+  delete from quest_reactions where quest_id = 'c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1' and kind = 'love';
+  get diagnostics affected = row_count;
+  assert affected = 1, 'user removes own reaction';
+  delete from quest_comments where id = 'c0000000-0000-4000-8000-000000000001';
+  get diagnostics affected = row_count;
+  assert affected = 1, 'author deletes own comment';
+  raise notice 'PASS: users remove their own comments/reactions';
+end $$;
+
+-- Comments dispatch push events; a dispatch failure must not block them.
+reset role;
+insert into app_config (key, value) values ('push_webhook_url', 'http://localhost:9999/functions/v1/send-push-notification');
+set role authenticated;
+select test_login('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
+insert into quest_comments (quest_id, author_id, body)
+values ('c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'Found a clue');
+reset role;
+delete from app_config where key = 'push_webhook_url';
+insert into quest_reactions (quest_id, user_id, kind)
+values ('c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'paw');
+insert into notifications (user_id, actor_id, type, quest_id, pack_id, title, body)
+values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'quest_commented', 'c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1', 'facadefa-cade-4ace-8ade-000000000001', 'Nadia commented', 'Found a clue');
+delete from quests where id = 'c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1';
+do $$
+begin
+  assert not exists (select 1 from quest_comments where quest_id = 'c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1'), 'comments cascade with the quest';
+  assert not exists (select 1 from quest_reactions where quest_id = 'c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1'), 'reactions cascade with the quest';
+  raise notice 'PASS: comment push dispatch is best-effort; comments/reactions cascade with the quest';
+end $$;
+
+reset role;
+\ir photo-comments.sql
 select 'ALL DB TESTS PASSED' as result;
