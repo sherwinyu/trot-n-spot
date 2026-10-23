@@ -1,4 +1,5 @@
-import { StyleSheet, TouchableOpacity, TextInput, Image, ActivityIndicator, ScrollView } from 'react-native';
+import { StyleSheet, TouchableOpacity, TextInput, ActivityIndicator, ScrollView } from 'react-native';
+import { QuestPhoto } from '@/components/QuestPhoto';
 import { useState, useEffect } from 'react';
 import { Text, View } from '@/components/Themed';
 import { useColorScheme } from '@/components/useColorScheme';
@@ -88,7 +89,7 @@ export default function CreateScreen() {
         </TouchableOpacity>
       ) : (
         <ScrollView style={styles.previewContainer} contentContainerStyle={styles.previewContent}>
-          <Image source={{ uri: photoUri }} style={styles.preview} />
+          <QuestPhoto storagePath={null} localUri={photoUri} style={styles.preview} accessibilityLabel="New quest photo" />
 
           <TextInput
             style={[

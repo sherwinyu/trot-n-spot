@@ -109,7 +109,12 @@ export function QuestActivity({ quest, onComplete, completing = false }: {
             {entry.comment.kind === 'original' && <Text style={[styles.action, { color: c.muted }]}>Original quest photo</Text>}
             {entry.comment.id === quest.completion_comment_id && <Text style={[styles.badge, { color: c.tint }]}>Completed the quest</Text>}
             {entry.comment.photo_path && (
-              <QuestPhoto storagePath={entry.comment.photo_path} style={styles.photo} accessibilityLabel="Comment photo" />
+              <QuestPhoto
+                storagePath={entry.comment.photo_path}
+                previewStoragePath={entry.comment.photo_full_path}
+                style={styles.photo}
+                accessibilityLabel="Comment photo"
+              />
             )}
             {!!entry.comment.body && <Text style={styles.body}>{entry.comment.body}</Text>}
             <View style={styles.commentActions}>

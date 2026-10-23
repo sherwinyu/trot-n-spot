@@ -52,6 +52,7 @@ const QuestCard = memo(function QuestCard({
     >
       <QuestPhoto
         storagePath={thumbnailPath || null}
+        previewStoragePath={quest.photo_full_path ?? quest.photo_path}
         localUri={quest.local_photo_uri}
         style={styles.cardImage}
         fallback={fallback}

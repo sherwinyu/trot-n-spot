@@ -1,5 +1,4 @@
 import { StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView, KeyboardAvoidingView, Platform, TextInput } from 'react-native';
-import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { QuestBackButton } from '@/components/QuestBackButton';
@@ -178,6 +177,7 @@ export default function QuestDetailScreen() {
         <ScrollView style={styles.container} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           <QuestPhoto
             storagePath={quest.photo_path}
+            previewStoragePath={quest.photo_full_path}
             style={styles.mainPhoto}
             accessibilityLabel={quest.description || 'Quest photo'}
           />
@@ -213,6 +213,7 @@ export default function QuestDetailScreen() {
               </Text>
               <QuestPhoto
                 storagePath={quest.completion_photo_path}
+                previewStoragePath={quest.completion_full_path}
                 style={styles.mainPhoto}
                 accessibilityLabel="Completed quest photo"
               />
@@ -252,13 +253,14 @@ export default function QuestDetailScreen() {
               <View style={styles.comparison}>
                 <QuestPhoto
                   storagePath={quest.photo_path}
+                  previewStoragePath={quest.photo_full_path}
                   style={styles.comparisonPhoto}
                   accessibilityLabel="Quest photo to match"
                 />
-                <Image
-                  source={{ uri: capturedUri }}
+                <QuestPhoto
+                  storagePath={null}
+                  localUri={capturedUri}
                   style={styles.comparisonPhoto}
-                  contentFit="cover"
                   accessibilityLabel="Your captured photo"
                 />
               </View>
