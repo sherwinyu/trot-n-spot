@@ -1,130 +1,131 @@
-import { useEffect } from 'react';
-import { Modal, StyleSheet, Pressable, useWindowDimensions } from 'react-native';
-import { Image } from 'expo-image';
+import { useEffect, useState } from 'react';
+import { Modal, StyleSheet, Pressable, Text, View, useWindowDimensions } from 'react-native';
+import { Image, type ImageSource } from 'expo-image';
 import { GestureHandlerRootView, Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { clampImageTranslation, containedImageSize } from '@/lib/imageViewer';
 
 const DOUBLE_TAP_SCALE = 3;
+const MAX_SCALE = 6;
 
-// Full-screen photo viewer with pinch-to-zoom, drag-to-pan (once zoomed),
-// and double-tap to toggle zoom. Rendering is driven entirely by shared
-// values on the UI thread so pinch/pan stay smooth at 60fps.
-export function ImageViewerModal({ uri, onClose }: { uri: string | null; onClose: () => void }) {
-  const { width, height } = useWindowDimensions();
-
+export function ImageViewerModal({ source, onClose, onError, accessibilityLabel }: {
+  source: ImageSource;
+  onClose: () => void;
+  onError: () => void;
+  accessibilityLabel?: string;
+}) {
+  const window = useWindowDimensions();
+  const [viewport, setViewport] = useState({ width: window.width, height: window.height });
+  const [imageSize, setImageSize] = useState(viewport);
+  const [failedUri, setFailedUri] = useState<string>();
+  const { width, height } = viewport;
+  const fitted = containedImageSize(imageSize.width, imageSize.height, width, height);
+  const insets = useSafeAreaInsets();
   const scale = useSharedValue(1);
   const savedScale = useSharedValue(1);
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
   const savedTranslateX = useSharedValue(0);
   const savedTranslateY = useSharedValue(0);
+  const focalX = useSharedValue(0);
+  const focalY = useSharedValue(0);
 
-  const reset = () => {
-    'worklet';
-    scale.value = withTiming(1);
-    savedScale.value = 1;
-    translateX.value = withTiming(0);
-    translateY.value = withTiming(0);
-    savedTranslateX.value = 0;
-    savedTranslateY.value = 0;
-  };
-
-  // A fresh image should always open at 1x, not wherever the last one was left.
   useEffect(() => {
-    if (uri) reset();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [uri]);
+    scale.value = savedScale.value = 1;
+    translateX.value = savedTranslateX.value = 0;
+    translateY.value = savedTranslateY.value = 0;
+  }, [width, height, scale, savedScale, translateX, translateY, savedTranslateX, savedTranslateY]);
 
-  const pinchGesture = Gesture.Pinch()
-    .onUpdate((e) => {
-      scale.value = Math.max(1, savedScale.value * e.scale);
-    })
-    .onEnd(() => {
+  const pinchGesture = Gesture.Pinch().withTestId('photo-pinch')
+    .onStart((event) => {
       savedScale.value = scale.value;
-      if (scale.value <= 1) reset();
-    });
-
-  const panGesture = Gesture.Pan()
-    .onUpdate((e) => {
-      if (savedScale.value <= 1) return;
-      const maxTranslateX = (width * (savedScale.value - 1)) / 2;
-      const maxTranslateY = (height * (savedScale.value - 1)) / 2;
-      translateX.value = Math.min(
-        maxTranslateX,
-        Math.max(-maxTranslateX, savedTranslateX.value + e.translationX)
-      );
-      translateY.value = Math.min(
-        maxTranslateY,
-        Math.max(-maxTranslateY, savedTranslateY.value + e.translationY)
-      );
-    })
-    .onEnd(() => {
       savedTranslateX.value = translateX.value;
       savedTranslateY.value = translateY.value;
+      focalX.value = event.focalX - width / 2;
+      focalY.value = event.focalY - height / 2;
+    })
+    .onUpdate((event) => {
+      scale.value = Math.min(MAX_SCALE, Math.max(1, savedScale.value * event.scale));
+      const ratio = scale.value / savedScale.value;
+      translateX.value = clampImageTranslation(
+        event.focalX - width / 2 - (focalX.value - savedTranslateX.value) * ratio,
+        fitted.width, width, scale.value
+      );
+      translateY.value = clampImageTranslation(
+        event.focalY - height / 2 - (focalY.value - savedTranslateY.value) * ratio,
+        fitted.height, height, scale.value
+      );
     });
 
-  const doubleTapGesture = Gesture.Tap()
-    .numberOfTaps(2)
-    .onEnd(() => {
-      if (scale.value > 1) {
-        reset();
-      } else {
-        scale.value = withTiming(DOUBLE_TAP_SCALE);
-        savedScale.value = DOUBLE_TAP_SCALE;
-      }
+  const panGesture = Gesture.Pan().withTestId('photo-pan').maxPointers(1)
+    .onChange((event) => {
+      if (event.numberOfPointers !== 1) return;
+      translateX.value = clampImageTranslation(translateX.value + event.changeX, fitted.width, width, scale.value);
+      translateY.value = clampImageTranslation(translateY.value + event.changeY, fitted.height, height, scale.value);
+    });
+
+  const doubleTapGesture = Gesture.Tap().withTestId('photo-double-tap').numberOfTaps(2)
+    .onEnd((_event, success) => {
+      if (!success) return;
+      scale.value = withTiming(scale.value > 1 ? 1 : DOUBLE_TAP_SCALE);
+      translateX.value = withTiming(0);
+      translateY.value = withTiming(0);
     });
 
   const composedGesture = Gesture.Exclusive(doubleTapGesture, Gesture.Simultaneous(pinchGesture, panGesture));
-
   const animatedStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateX: translateX.value },
-      { translateY: translateY.value },
-      { scale: scale.value },
-    ],
+    transform: [{ translateX: translateX.value }, { translateY: translateY.value }, { scale: scale.value }],
   }));
 
   return (
-    <Modal visible={!!uri} transparent animationType="fade" onRequestClose={onClose}>
-      <GestureHandlerRootView style={styles.root}>
-        <Pressable style={styles.closeButton} onPress={onClose} hitSlop={16}>
-          <Ionicons name="close" size={28} color="#fff" />
-        </Pressable>
+    <Modal visible transparent animationType="fade" statusBarTranslucent navigationBarTranslucent onRequestClose={onClose}>
+      <GestureHandlerRootView
+        style={styles.root}
+        onLayout={({ nativeEvent: { layout } }) => setViewport({ width: layout.width, height: layout.height })}
+        onTouchEnd={(event) => event.stopPropagation()}
+        accessibilityViewIsModal
+      >
         <GestureDetector gesture={composedGesture}>
-          <Animated.View style={[styles.imageWrapper, { width, height }, animatedStyle]}>
-            {uri && (
+          <View style={styles.viewport} collapsable={false}>
+            <Animated.View style={[StyleSheet.absoluteFill, animatedStyle]}>
               <Image
-                source={{ uri }}
-                style={styles.image}
+                key={source.uri}
+                source={source}
+                style={StyleSheet.absoluteFill}
                 contentFit="contain"
                 cachePolicy="memory-disk"
+                accessibilityLabel={accessibilityLabel ?? 'Full-screen photo'}
+                onLoad={({ source: loaded }) => {
+                  if (loaded.width > 0 && loaded.height > 0) setImageSize({ width: loaded.width, height: loaded.height });
+                }}
+                onError={() => {
+                  setFailedUri(source.uri);
+                  onError();
+                }}
               />
-            )}
-          </Animated.View>
+            </Animated.View>
+          </View>
         </GestureDetector>
+        {failedUri === source.uri && <Text style={styles.error}>Photo unavailable</Text>}
+        <Pressable
+          style={[styles.closeButton, { top: Math.max(insets.top, 12), right: Math.max(insets.right, 12) }]}
+          accessibilityRole="button"
+          accessibilityLabel="Close photo viewer"
+          onPress={(event) => { event.stopPropagation(); onClose(); }}
+          hitSlop={8}
+        >
+          <Ionicons name="close" size={28} color="#fff" />
+        </Pressable>
       </GestureHandlerRootView>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  root: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.95)',
-  },
-  closeButton: {
-    position: 'absolute',
-    top: 56,
-    right: 20,
-    zIndex: 10,
-    padding: 8,
-  },
-  imageWrapper: {
-    flex: 1,
-  },
-  image: {
-    width: '100%',
-    height: '100%',
-  },
+  root: { ...StyleSheet.absoluteFillObject, backgroundColor: '#000' },
+  viewport: { flex: 1, overflow: 'hidden' },
+  closeButton: { position: 'absolute', zIndex: 10, padding: 12, borderRadius: 28, backgroundColor: 'rgba(0,0,0,0.6)' },
+  error: { position: 'absolute', alignSelf: 'center', top: '50%', color: '#fff' },
 });

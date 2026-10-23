@@ -77,6 +77,7 @@ function HistoryCard({ quest }: { quest: FeedQuest }) {
       <View style={styles.photos}>
         <QuestPhoto
           storagePath={originalPath}
+          previewStoragePath={quest.photo_full_path ?? quest.photo_path}
           style={styles.photo}
           accessibilityLabel="Original quest photo"
           fallback={
@@ -87,6 +88,7 @@ function HistoryCard({ quest }: { quest: FeedQuest }) {
         />
         <QuestPhoto
           storagePath={completionPath}
+          previewStoragePath={quest.completion_full_path ?? quest.completion_photo_path}
           localUri={quest.local_completion_uri}
           style={styles.photo}
           accessibilityLabel="Completed quest photo"
