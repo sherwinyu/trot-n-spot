@@ -13,7 +13,7 @@ export function ProductView({
   demo: boolean;
   onReceipt: (id: string) => void;
 }) {
-  const { api, connection, imageUri } = useReceiptRuntime();
+  const { api } = useReceiptRuntime();
   const [history, setHistory] = useState<Observation[]>(),
     [error, setError] = useState('');
   useEffect(() => {

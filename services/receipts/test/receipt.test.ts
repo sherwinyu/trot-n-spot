@@ -10,10 +10,8 @@ import {
   reconcile,
   type Extraction,
 } from '@bowl/shared';
-import { readFile } from 'node:fs/promises';
 import { buildApp } from '../src/app.ts';
 import { processOne } from '../src/worker.ts';
-import type { DB } from '../src/db.ts';
 import type { Storage } from '../src/storage.ts';
 
 export const fixture: Extraction = {
