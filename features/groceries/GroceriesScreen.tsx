@@ -69,7 +69,6 @@ function Main() {
   const focused = useIsFocused();
   const {
     api,
-    connection,
     loadConnection,
     drain,
     enqueue,
